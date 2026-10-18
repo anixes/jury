@@ -23,7 +23,7 @@ from triad.client import run_multi_model_query
 from triad.config import get_global_config_path, init_config_file, resolve_config
 from triad.consultant import DEFAULT_CONSULT_SYSTEM_PROMPT, build_consult_prompt, load_spec_document
 from triad.debate import run_multi_model_debate
-from triad.report import generate_json_report, generate_markdown_report
+from triad.report import format_score_progression, generate_json_report, generate_markdown_report
 from triad.reviewer import DEFAULT_REVIEW_SYSTEM_PROMPT, build_review_prompt, get_git_diff, load_test_files
 
 
@@ -161,14 +161,15 @@ def main(argv: Optional[list] = None) -> int:
         )
         p.add_argument(
             "--debate",
-            action="store_true",
-            help="Enable multi-round deliberation and cross-critique between models",
+            action=argparse.BooleanOptionalAction,
+            default=None,
+            help="Enable/disable multi-round deliberation and cross-critique between models",
         )
         p.add_argument(
             "--debate-rounds",
             type=int,
             default=None,
-            help="Number of deliberation rounds when debate is enabled (default: 2)",
+            help="Number of deliberation rounds when debate is enabled (default: 2, max: 5)",
         )
 
     args = parser.parse_args(argv)
@@ -185,7 +186,7 @@ def main(argv: Optional[list] = None) -> int:
         cli_min_score=getattr(args, "min_score", 7.0),
         cli_strict=getattr(args, "strict", False),
         cli_repo=getattr(args, "repo", None),
-        cli_debate=getattr(args, "debate", False),
+        cli_debate=getattr(args, "debate", None),
         cli_debate_rounds=getattr(args, "debate_rounds", None),
     )
 
@@ -273,21 +274,8 @@ def main(argv: Optional[list] = None) -> int:
 
     for r in results:
         status_tag = "[PASS]" if r.success else "[FAIL]"
-        if any(len(r.rounds) > 1 for r in results):
-            score_history = [
-                f"{rnd['score']:.1f}"
-                for rnd in r.rounds
-                if isinstance(rnd, dict) and rnd.get("score") is not None
-            ]
-            if len(score_history) > 1:
-                score_tag = f"Score: {' -> '.join(score_history)}/10"
-            elif r.score is not None:
-                score_tag = f"Score: {r.score:.1f}/10"
-            else:
-                score_tag = "Score: N/A"
-        else:
-            score_tag = f"Score: {r.score:.1f}/10" if r.score is not None else "Score: N/A"
-
+        score_prog = format_score_progression(r.rounds if config.debate else None, r.score, arrow=" -> ")
+        score_tag = f"Score: {score_prog}"
         print(f"{status_tag} {r.model} -> {r.verdict} ({score_tag}) in {r.duration_s:.1f}s")
 
         if not r.success:

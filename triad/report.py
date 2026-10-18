@@ -12,6 +12,28 @@ from typing import List
 from triad.client import ModelEvaluationResult
 
 
+def format_score_progression(
+    rounds: Optional[List[dict]] = None,
+    fallback_score: Optional[float] = None,
+    arrow: str = " → ",
+) -> str:
+    """Format numeric score history across deliberation rounds (e.g. '8.0 → 9.0/10')."""
+    if rounds:
+        scores = [
+            f"{rnd['score']:.1f}"
+            for rnd in rounds
+            if isinstance(rnd, dict) and rnd.get("score") is not None
+        ]
+        if len(scores) > 1:
+            return f"{arrow.join(scores)}/10"
+        elif scores:
+            return f"{scores[0]}/10"
+
+    if fallback_score is not None:
+        return f"{fallback_score:.1f}/10"
+    return "N/A"
+
+
 def generate_markdown_report(
     mode: str,
     results: List[ModelEvaluationResult],
@@ -42,29 +64,10 @@ def generate_markdown_report(
     for r in results:
         status_icon = "✔ SUCCESS" if r.success else f"✘ FAILED ({r.error})"
         file_link = f"[{r.output_file.name}]({r.output_file.as_posix()})" if r.output_file else "None"
-
-        if is_debate:
-            score_history = [
-                f"{rnd['score']:.1f}"
-                for rnd in r.rounds
-                if isinstance(rnd, dict) and rnd.get("score") is not None
-            ]
-            if len(score_history) > 1:
-                score_str = f"{' → '.join(score_history)}/10"
-            elif score_history:
-                score_str = f"{score_history[0]}/10"
-            elif r.score is not None:
-                score_str = f"{r.score:.1f}/10"
-            else:
-                score_str = "N/A"
-            lines.append(
-                f"| **{r.label}** (`{r.model}`) | {status_icon} | {score_str} | **{r.verdict}** | {r.duration_s:.1f}s | {file_link} |"
-            )
-        else:
-            score_str = f"{r.score:.1f}/10" if r.score is not None else "N/A"
-            lines.append(
-                f"| **{r.label}** (`{r.model}`) | {status_icon} | {score_str} | **{r.verdict}** | {r.duration_s:.1f}s | {file_link} |"
-            )
+        score_str = format_score_progression(r.rounds if is_debate else None, r.score, arrow=" → ")
+        lines.append(
+            f"| **{r.label}** (`{r.model}`) | {status_icon} | {score_str} | **{r.verdict}** | {r.duration_s:.1f}s | {file_link} |"
+        )
 
     if is_debate:
         lines.append("\n---\n")

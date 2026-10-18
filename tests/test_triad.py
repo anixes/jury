@@ -36,7 +36,7 @@ from triad.config import (
 )
 from triad.consultant import build_consult_prompt, load_spec_document
 from triad.debate import build_cross_critique_prompt, run_multi_model_debate
-from triad.report import generate_json_report, generate_markdown_report
+from triad.report import format_score_progression, generate_json_report, generate_markdown_report
 from triad.reviewer import build_review_prompt, get_git_diff, load_test_files
 
 
@@ -646,4 +646,97 @@ def test_cli_consult_with_debate_flag(tmp_path: Path):
         assert code == 0
         assert mock_debate.call_count == 1
         assert mock_debate.call_args[1]["total_rounds"] == 2
+
+
+def test_format_score_progression_helper():
+    assert format_score_progression(None, fallback_score=8.5) == "8.5/10"
+    assert format_score_progression([], fallback_score=None) == "N/A"
+    assert format_score_progression([{"score": 7.0}], fallback_score=9.0) == "7.0/10"
+    assert format_score_progression([{"score": 7.0}, {"score": 8.5}], arrow=" -> ") == "7.0 -> 8.5/10"
+    assert format_score_progression([{"score": 7.0}, {"score": 8.5}, {"score": 9.0}]) == "7.0 → 8.5 → 9.0/10"
+
+
+def test_resolve_config_debate_rounds_clamping(tmp_path: Path):
+    cfg_high = resolve_config(cli_repo=str(tmp_path), cli_debate_rounds=100)
+    assert cfg_high.debate_rounds == 5
+
+    cfg_low = resolve_config(cli_repo=str(tmp_path), cli_debate_rounds=1)
+    assert cfg_low.debate_rounds == 2
+
+    cfg_neg = resolve_config(cli_repo=str(tmp_path), cli_debate_rounds=-10)
+    assert cfg_neg.debate_rounds == 2
+
+
+def test_cli_no_debate_override(tmp_path: Path):
+    mock_res = ModelEvaluationResult(
+        model="model-nodebate",
+        label="Reviewer",
+        success=True,
+        score=9.0,
+        verdict="APPROVED",
+    )
+    env_mock = {
+        "TRIAD_API_KEY": "sk-mock",
+        "TRIAD_MODELS": "model-nodebate",
+        "TRIAD_DEBATE": "true",
+        "USERPROFILE": str(tmp_path),
+        "HOME": str(tmp_path),
+    }
+    with patch.dict("os.environ", env_mock, clear=True):
+        with patch("triad.cli.run_multi_model_query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = [mock_res]
+            code = main([
+                "consult",
+                "--repo", str(tmp_path),
+                "--prompt", "Design system",
+                "--no-debate",
+            ])
+            assert code == 0
+            # Should have called run_multi_model_query (not debate)
+            assert mock_query.call_count == 1
+
+
+def test_run_multi_model_debate_handles_round1_failure(tmp_path: Path):
+    # Model A succeeds in Round 1, Model B fails in Round 1
+    # Debate should abort deliberation gracefully because < 2 models succeeded
+    res_a = ModelEvaluationResult(
+        model="model-a",
+        label="Model A",
+        success=True,
+        final_text="Plan A text",
+        score=8.0,
+        verdict="APPROVED",
+    )
+    res_b = ModelEvaluationResult(
+        model="model-b",
+        label="Model B",
+        success=False,
+        final_text="",
+        error="Network 500 error",
+    )
+
+    with patch("triad.debate.HAS_OPENAI", True), \
+         patch("triad.debate.run_multi_model_query", new_callable=AsyncMock) as mock_q1:
+        mock_q1.return_value = [res_a, res_b]
+
+        results = asyncio.run(
+            run_multi_model_debate(
+                mode="consult",
+                models=["model-a", "model-b"],
+                gateway_url="https://mock",
+                api_key="sk-test",
+                user_prompt="prompt",
+                system_prompt="sys",
+                output_dir=tmp_path,
+                total_rounds=2,
+            )
+        )
+
+        assert len(results) == 2
+        # Did not crash, and did not run round 2
+        assert len(results[0].rounds) == 1
+        assert len(results[1].rounds) == 1
+        assert results[1].success is False
+        assert results[1].error == "Network 500 error"
+
 

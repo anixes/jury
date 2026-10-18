@@ -96,7 +96,7 @@ def resolve_config(
     cli_min_score: Optional[float] = None,
     cli_strict: bool = False,
     cli_repo: Optional[str] = None,
-    cli_debate: bool = False,
+    cli_debate: Optional[bool] = None,
     cli_debate_rounds: Optional[int] = None,
 ) -> TriadConfig:
     """Resolve full TriadConfig combining global, local, env, and CLI sources."""
@@ -140,15 +140,19 @@ def resolve_config(
 
     min_score = float(cli_min_score) if cli_min_score is not None else 7.0
 
-    debate_str = _get_val(["TRIAD_DEBATE", "GATE_DEBATE"], str(cli_debate) if cli_debate else None)
-    debate = cli_debate or (debate_str.lower() in ("1", "true", "yes") if debate_str else False)
+    if cli_debate is not None:
+        debate = bool(cli_debate)
+    else:
+        debate_str = _get_val(["TRIAD_DEBATE", "GATE_DEBATE"])
+        debate = (debate_str.lower() in ("1", "true", "yes")) if debate_str else False
 
     rounds_str = _get_val(
         ["TRIAD_DEBATE_ROUNDS"],
         str(cli_debate_rounds) if cli_debate_rounds is not None else None,
     )
     try:
-        debate_rounds = int(rounds_str) if rounds_str else 2
+        raw_rounds = int(rounds_str) if rounds_str else 2
+        debate_rounds = max(2, min(5, raw_rounds))
     except ValueError:
         debate_rounds = 2
 
