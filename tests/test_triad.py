@@ -35,6 +35,7 @@ from triad.config import (
     resolve_config,
 )
 from triad.consultant import build_consult_prompt, load_spec_document
+from triad.debate import build_cross_critique_prompt, run_multi_model_debate
 from triad.report import generate_json_report, generate_markdown_report
 from triad.reviewer import build_review_prompt, get_git_diff, load_test_files
 
@@ -436,3 +437,213 @@ def test_consultant_path_traversal_blocked(tmp_path: Path):
     assert "Security Error" in output
     assert "Path traversal detected" in output
     assert "sensitive spec" not in output
+
+
+# ============================================================================
+# 6. Multi-Model Deliberation & Debate Tests
+# ============================================================================
+
+def test_resolve_config_debate_options(tmp_path: Path):
+    env_mock = {
+        "TRIAD_API_KEY": "env-key",
+        "TRIAD_MODELS": "m1,m2",
+        "TRIAD_DEBATE": "true",
+        "TRIAD_DEBATE_ROUNDS": "3",
+        "USERPROFILE": str(tmp_path),
+        "HOME": str(tmp_path),
+    }
+    with patch.dict("os.environ", env_mock, clear=True):
+        cfg = resolve_config(cli_repo=str(tmp_path))
+        assert cfg.debate is True
+        assert cfg.debate_rounds == 3
+
+        # CLI overrides
+        cfg_cli = resolve_config(
+            cli_repo=str(tmp_path),
+            cli_debate=False,
+            cli_debate_rounds=4,
+        )
+        assert cfg_cli.debate_rounds == 4
+
+
+def test_build_cross_critique_prompt():
+    own = ModelEvaluationResult(
+        model="model-a",
+        label="Architect A",
+        success=True,
+        final_text="Plan A: Event-driven architecture with SQLite.",
+        score=8.5,
+        verdict="APPROVED",
+    )
+    peer = ModelEvaluationResult(
+        model="model-b",
+        label="Architect B",
+        success=True,
+        final_text="Plan B: Stateless REST microservices with PostgreSQL.",
+        score=7.0,
+        verdict="APPROVED WITH COMMENTS",
+    )
+
+    prompt = build_cross_critique_prompt(
+        mode="consult",
+        original_prompt="Design a high-throughput storage pipeline.",
+        own_result=own,
+        peer_results=[peer],
+        round_idx=2,
+        total_rounds=2,
+    )
+
+    assert "Round 2 of 2" in prompt
+    assert "Design a high-throughput storage pipeline." in prompt
+    assert "Architect B" in prompt
+    assert "Stateless REST microservices" in prompt
+    assert "Architect A" in prompt
+    assert "Event-driven architecture with SQLite" in prompt
+    assert "Cross-Critique & Vulnerability Analysis" in prompt
+
+
+def test_run_multi_model_debate_fallback_single_model(tmp_path: Path):
+    mock_res = ModelEvaluationResult(
+        model="single-model",
+        label="Reviewer",
+        success=True,
+        score=9.0,
+        verdict="APPROVED",
+    )
+    with patch("triad.debate.run_multi_model_query", new_callable=AsyncMock) as mock_query:
+        mock_query.return_value = [mock_res]
+        res = asyncio.run(
+            run_multi_model_debate(
+                mode="consult",
+                models=["single-model"],
+                gateway_url="https://fake",
+                api_key="key",
+                user_prompt="test",
+                system_prompt="sys",
+                output_dir=tmp_path,
+                total_rounds=2,
+            )
+        )
+        assert len(res) == 1
+        assert res[0].model == "single-model"
+        assert mock_query.call_count == 1
+
+
+def test_run_multi_model_debate_execution(tmp_path: Path):
+    call_log = []
+
+    async def _mock_query(client, model, system_prompt, user_prompt, **kwargs):
+        call_log.append((model, user_prompt))
+        if "Round 2 of 2" in user_prompt:
+            if model == "model-a":
+                return True, "R2 A", "", "Refined Plan A after peer review. Score: 9.0/10 Verdict: APPROVED", None
+            else:
+                return True, "R2 B", "", "Refined Plan B after peer review. Score: 8.5/10 Verdict: APPROVED", None
+        else:
+            if model == "model-a":
+                return True, "R1 A", "", "Initial Plan A. Score: 8.0/10 Verdict: APPROVED WITH COMMENTS", None
+            else:
+                return True, "R1 B", "", "Initial Plan B. Score: 7.5/10 Verdict: APPROVED WITH COMMENTS", None
+
+    with patch("triad.client.HAS_OPENAI", True), \
+         patch("triad.client.AsyncOpenAI"), \
+         patch("triad.client.query_model_with_retry", side_effect=_mock_query), \
+         patch("triad.debate.query_model_with_retry", side_effect=_mock_query):
+
+        results = asyncio.run(
+            run_multi_model_debate(
+                mode="consult",
+                models=["model-a", "model-b"],
+                gateway_url="https://mock-gateway/v1",
+                api_key="sk-test",
+                user_prompt="Design a caching layer",
+                system_prompt="System prompt",
+                output_dir=tmp_path,
+                total_rounds=2,
+            )
+        )
+
+        assert len(results) == 2
+        res_a = next(r for r in results if r.model == "model-a")
+        res_b = next(r for r in results if r.model == "model-b")
+
+        # Check score progression
+        assert len(res_a.rounds) == 2
+        assert res_a.rounds[0]["score"] == 8.0
+        assert res_a.rounds[1]["score"] == 9.0
+        assert res_a.score == 9.0
+        assert res_a.verdict == "APPROVED"
+
+        assert len(res_b.rounds) == 2
+        assert res_b.rounds[0]["score"] == 7.5
+        assert res_b.rounds[1]["score"] == 8.5
+        assert res_b.score == 8.5
+
+        # Check round 1 and round 2 artifact files
+        assert (tmp_path / "model-a_consult_round1.md").is_file()
+        assert (tmp_path / "model-a_consult_round2.md").is_file()
+        assert (tmp_path / "model-a_consult.md").is_file()
+
+
+def test_generate_reports_with_debate_history(tmp_path: Path):
+    res = ModelEvaluationResult(
+        model="model-alpha",
+        label="Reviewer 1",
+        success=True,
+        final_text="Final text post debate",
+        score=9.0,
+        verdict="APPROVED",
+        duration_s=5.0,
+        output_file=tmp_path / "model_alpha_review.md",
+        rounds=[
+            {"round": 1, "score": 8.0, "verdict": "APPROVED WITH COMMENTS", "output_file": str(tmp_path / "r1.md")},
+            {"round": 2, "score": 9.0, "verdict": "APPROVED", "output_file": str(tmp_path / "r2.md")},
+        ],
+    )
+    res.output_file.write_text("Final review", encoding="utf-8")
+
+    md_out = tmp_path / "consolidated.md"
+    md_content = generate_markdown_report("review", [res], md_out)
+    assert "(MULTI-MODEL DEBATE)" in md_content
+    assert "8.0 → 9.0/10" in md_content
+    assert "Deliberation Progression by Round" in md_content
+    assert "Round 1:" in md_content
+    assert "Round 2:" in md_content
+
+    json_out = tmp_path / "consolidated.json"
+    json_data = generate_json_report("review", [res], json_out)
+    assert json_data["debate_enabled"] is True
+    assert len(json_data["results"][0]["rounds"]) == 2
+
+
+def test_cli_consult_with_debate_flag(tmp_path: Path):
+    mock_res = ModelEvaluationResult(
+        model="model-debater",
+        label="Panelist 1",
+        success=True,
+        score=9.0,
+        verdict="APPROVED",
+        duration_s=2.0,
+        output_file=tmp_path / "out.md",
+        rounds=[
+            {"round": 1, "score": 8.0, "verdict": "APPROVED WITH COMMENTS"},
+            {"round": 2, "score": 9.0, "verdict": "APPROVED"},
+        ],
+    )
+    mock_res.output_file.write_text("Post debate plan", encoding="utf-8")
+
+    with patch("triad.cli.run_multi_model_debate", new_callable=AsyncMock) as mock_debate:
+        mock_debate.return_value = [mock_res]
+        code = main([
+            "consult",
+            "--repo", str(tmp_path),
+            "--prompt", "Design consensus engine",
+            "--models", "model-debater,model-debater-2",
+            "--api-key", "sk-mock",
+            "--debate",
+            "--debate-rounds", "2",
+        ])
+        assert code == 0
+        assert mock_debate.call_count == 1
+        assert mock_debate.call_args[1]["total_rounds"] == 2
+

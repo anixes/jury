@@ -22,6 +22,7 @@ if sys.platform == "win32":
 from triad.client import run_multi_model_query
 from triad.config import get_global_config_path, init_config_file, resolve_config
 from triad.consultant import DEFAULT_CONSULT_SYSTEM_PROMPT, build_consult_prompt, load_spec_document
+from triad.debate import run_multi_model_debate
 from triad.report import generate_json_report, generate_markdown_report
 from triad.reviewer import DEFAULT_REVIEW_SYSTEM_PROMPT, build_review_prompt, get_git_diff, load_test_files
 
@@ -158,6 +159,17 @@ def main(argv: Optional[list] = None) -> int:
             default="all",
             help="Report format to generate (default: all)",
         )
+        p.add_argument(
+            "--debate",
+            action="store_true",
+            help="Enable multi-round deliberation and cross-critique between models",
+        )
+        p.add_argument(
+            "--debate-rounds",
+            type=int,
+            default=None,
+            help="Number of deliberation rounds when debate is enabled (default: 2)",
+        )
 
     args = parser.parse_args(argv)
 
@@ -173,6 +185,8 @@ def main(argv: Optional[list] = None) -> int:
         cli_min_score=getattr(args, "min_score", 7.0),
         cli_strict=getattr(args, "strict", False),
         cli_repo=getattr(args, "repo", None),
+        cli_debate=getattr(args, "debate", False),
+        cli_debate_rounds=getattr(args, "debate_rounds", None),
     )
 
     if not config.models:
@@ -190,6 +204,10 @@ def main(argv: Optional[list] = None) -> int:
     print(f"Triad: Running '{args.command.upper()}' on {config.repo_dir.as_posix()}")
     print(f"Gateway: {config.gateway_url}")
     print(f"Models:  {', '.join(config.models)}")
+    if config.debate:
+        print(f"Debate:  ENABLED ({config.debate_rounds} deliberation rounds)")
+    else:
+        print("Debate:  DISABLED (blind independent evaluation)")
     print(f"Output:  {config.output_dir.as_posix()}")
     print(f"{'='*60}\n")
 
@@ -206,18 +224,33 @@ def main(argv: Optional[list] = None) -> int:
             return 1
         system_prompt = DEFAULT_CONSULT_SYSTEM_PROMPT
 
-    results = asyncio.run(
-        run_multi_model_query(
-            mode=args.command,
-            models=config.models,
-            gateway_url=config.gateway_url,
-            api_key=config.api_key,
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
-            output_dir=config.output_dir,
-            labels=[f"Triad Reviewer {i+1}" for i in range(len(config.models))],
+    if config.debate:
+        results = asyncio.run(
+            run_multi_model_debate(
+                mode=args.command,
+                models=config.models,
+                gateway_url=config.gateway_url,
+                api_key=config.api_key,
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                output_dir=config.output_dir,
+                labels=[f"Triad Panelist {i+1}" for i in range(len(config.models))],
+                total_rounds=config.debate_rounds,
+            )
         )
-    )
+    else:
+        results = asyncio.run(
+            run_multi_model_query(
+                mode=args.command,
+                models=config.models,
+                gateway_url=config.gateway_url,
+                api_key=config.api_key,
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                output_dir=config.output_dir,
+                labels=[f"Triad Reviewer {i+1}" for i in range(len(config.models))],
+            )
+        )
 
     # Format reports
     if args.format in ("markdown", "all"):
@@ -230,14 +263,31 @@ def main(argv: Optional[list] = None) -> int:
         generate_json_report(args.command, results, json_path)
         print(f"JSON Report:     {json_path.as_posix()}")
 
+    summary_title = f"TRIAD {args.command.upper()} RESULTS SUMMARY"
+    if config.debate and any(len(r.rounds) > 1 for r in results):
+        summary_title += f" (DEBATE MODE: {config.debate_rounds} ROUNDS)"
     print("\n" + "=" * 60)
-    print(f"TRIAD {args.command.upper()} RESULTS SUMMARY")
+    print(summary_title)
     print("=" * 60)
     gate_failures = []
 
     for r in results:
         status_tag = "[PASS]" if r.success else "[FAIL]"
-        score_tag = f"Score: {r.score:.1f}/10" if r.score is not None else "Score: N/A"
+        if any(len(r.rounds) > 1 for r in results):
+            score_history = [
+                f"{rnd['score']:.1f}"
+                for rnd in r.rounds
+                if isinstance(rnd, dict) and rnd.get("score") is not None
+            ]
+            if len(score_history) > 1:
+                score_tag = f"Score: {' -> '.join(score_history)}/10"
+            elif r.score is not None:
+                score_tag = f"Score: {r.score:.1f}/10"
+            else:
+                score_tag = "Score: N/A"
+        else:
+            score_tag = f"Score: {r.score:.1f}/10" if r.score is not None else "Score: N/A"
+
         print(f"{status_tag} {r.model} -> {r.verdict} ({score_tag}) in {r.duration_s:.1f}s")
 
         if not r.success:

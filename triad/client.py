@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -31,6 +31,8 @@ class ModelEvaluationResult:
     duration_s: float = 0.0
     error: Optional[str] = None
     output_file: Optional[Path] = None
+    rounds: List[dict] = field(default_factory=list)
+
 
 
 def extract_score_and_verdict(text: str) -> Tuple[Optional[float], str]:
@@ -164,6 +166,13 @@ async def run_multi_model_query(
                     verdict=verdict,
                     duration_s=duration,
                     output_file=out_file,
+                    rounds=[{
+                        "round": 1,
+                        "score": score,
+                        "verdict": verdict,
+                        "duration_s": duration,
+                        "output_file": str(out_file),
+                    }],
                 )
             else:
                 return ModelEvaluationResult(
@@ -173,6 +182,11 @@ async def run_multi_model_query(
                     duration_s=duration,
                     error=err or "Empty response",
                     output_file=out_file,
+                    rounds=[{
+                        "round": 1,
+                        "error": err or "Empty response",
+                        "duration_s": duration,
+                    }],
                 )
 
     tasks = []

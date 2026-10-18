@@ -94,6 +94,25 @@ triad consult --prompt "How to design a durable background task engine with idem
 triad consult --spec docs/rfc-001-architecture.md --prompt "Evaluate failure modes and security risks."
 ```
 
+### 3. Multi-Model Deliberation & Debate (`--debate`)
+
+By default, Triad runs in **blind peer review** mode (models generate their reviews independently without seeing each other's outputs, eliminating anchoring bias and groupthink).
+
+When you want the models to **actively challenge, cross-critique, and refine each other's findings**, pass `--debate`:
+
+```bash
+# Run a 2-round architectural debate (Round 1: blind, Round 2: cross-critique & synthesis)
+triad consult --prompt "Design consensus engine" --debate
+
+# Run multi-round code review debate with calibrated scoring
+triad review --target staged --debate --debate-rounds 2
+```
+
+In Debate Mode:
+- **Round 1 (Independent Assessment):** Each model analyzes the task in isolation.
+- **Round 2 (Cross-Critique & Synthesis):** Each model receives the peer models' Round 1 proposals, critiques flaws and oversights, adopts superior recommendations, and delivers a battle-tested, refined verdict.
+- **Reporting:** Reports track score and verdict progression across rounds (e.g., `8.0 → 9.0/10`) with full transcripts.
+
 ---
 
 ## Output & Reports

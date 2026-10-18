@@ -31,6 +31,8 @@ class TriadConfig:
     min_score: float = 7.0
     strict: bool = False
     repo_dir: Path = field(default_factory=lambda: Path.cwd())
+    debate: bool = False
+    debate_rounds: int = 2
 
     @property
     def is_valid(self) -> bool:
@@ -94,6 +96,8 @@ def resolve_config(
     cli_min_score: Optional[float] = None,
     cli_strict: bool = False,
     cli_repo: Optional[str] = None,
+    cli_debate: bool = False,
+    cli_debate_rounds: Optional[int] = None,
 ) -> TriadConfig:
     """Resolve full TriadConfig combining global, local, env, and CLI sources."""
     repo_path = Path(cli_repo).resolve() if cli_repo else Path.cwd().resolve()
@@ -136,6 +140,18 @@ def resolve_config(
 
     min_score = float(cli_min_score) if cli_min_score is not None else 7.0
 
+    debate_str = _get_val(["TRIAD_DEBATE", "GATE_DEBATE"], str(cli_debate) if cli_debate else None)
+    debate = cli_debate or (debate_str.lower() in ("1", "true", "yes") if debate_str else False)
+
+    rounds_str = _get_val(
+        ["TRIAD_DEBATE_ROUNDS"],
+        str(cli_debate_rounds) if cli_debate_rounds is not None else None,
+    )
+    try:
+        debate_rounds = int(rounds_str) if rounds_str else 2
+    except ValueError:
+        debate_rounds = 2
+
     return TriadConfig(
         api_key=api_key,
         gateway_url=gateway_url,
@@ -144,6 +160,8 @@ def resolve_config(
         min_score=min_score,
         strict=cli_strict,
         repo_dir=repo_path,
+        debate=debate,
+        debate_rounds=debate_rounds,
     )
 
 
@@ -166,6 +184,10 @@ TRIAD_MODELS=provider/model-1,provider/model-2
 
 # Default output directory for reports
 TRIAD_OUTPUT_DIR=reports/triad
+
+# Multi-round deliberation / cross-critique between models (true/false)
+TRIAD_DEBATE=false
+TRIAD_DEBATE_ROUNDS=2
 """
     target_path.write_text(template, encoding="utf-8")
     return target_path
