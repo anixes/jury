@@ -20,11 +20,45 @@ if sys.platform == "win32":
         pass
 
 from triad.client import run_multi_model_query
-from triad.config import get_global_config_path, init_config_file, resolve_config
+from triad.config import TriadConfig, get_global_config_path, init_config_file, resolve_config
 from triad.consultant import DEFAULT_CONSULT_SYSTEM_PROMPT, build_consult_prompt, load_spec_document
 from triad.debate import run_multi_model_debate
+from triad.pack import compile_context_pack
 from triad.report import format_score_progression, generate_json_report, generate_markdown_report
 from triad.reviewer import DEFAULT_REVIEW_SYSTEM_PROMPT, build_review_prompt, get_git_diff, load_test_files
+
+
+def handle_pack(args: argparse.Namespace, config: TriadConfig) -> int:
+    """Handle `triad pack` command to compile deterministic Context Pack."""
+    print(f"\n{'='*60}")
+    print(f"Triad: Compiling Context Pack for {config.repo_dir.as_posix()} (target: {args.target})")
+    print(f"{'='*60}\n")
+    pack = compile_context_pack(
+        repo_dir=config.repo_dir,
+        target=args.target,
+        token_budget=args.budget,
+    )
+    if args.format == "json":
+        output_content = pack.to_json()
+    else:
+        output_content = pack.to_markdown()
+
+    if args.output:
+        out_path = Path(args.output)
+        if not out_path.is_absolute():
+            out_path = config.repo_dir / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(output_content, encoding="utf-8")
+        print(f"[OK] Context Pack written to: {out_path.as_posix()}")
+    else:
+        print(output_content)
+
+    print(
+        f"\n[Summary] Seeds: {len(pack.seed_symbols)} | Tier 1: {len(pack.mandatory_symbols)} | "
+        f"Tier 2: {len(pack.prioritized_symbols)} | Tokens: ~{pack.total_estimated_tokens}"
+    )
+    return 0
+
 
 
 def handle_init(args: argparse.Namespace) -> int:
@@ -95,6 +129,17 @@ def main(argv: Optional[list] = None) -> int:
         help="Additional specific review directives or focus areas",
     )
     review_parser.add_argument(
+        "--pack",
+        action="store_true",
+        help="Compile and attach deterministic Context Pack to review prompt",
+    )
+    review_parser.add_argument(
+        "--token-budget",
+        type=int,
+        default=4000,
+        help="Token budget for Context Pack (default: 4000)",
+    )
+    review_parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit with non-zero code if any model rejects or gives score < threshold",
@@ -121,10 +166,49 @@ def main(argv: Optional[list] = None) -> int:
         help="Path to markdown specification or design document to consult on",
     )
     consult_parser.add_argument(
+        "--context-pack",
+        type=str,
+        default=None,
+        help="Path to pre-compiled Context Pack file to attach to consultation",
+    )
+    consult_parser.add_argument(
         "--prompt",
         type=str,
         default="",
         help="Text prompt describing the architectural task or questions",
+    )
+
+    # 4. pack command
+    pack_parser = subparsers.add_parser("pack", help="Compile a deterministic Context Pack from repo and git diff")
+    pack_parser.add_argument(
+        "--repo",
+        type=str,
+        default=None,
+        help="Target git repository path (default: current working directory)",
+    )
+    pack_parser.add_argument(
+        "--target",
+        type=str,
+        default="unstaged",
+        help="Git diff target: unstaged, staged, working, HEAD~1, origin/main... (default: unstaged)",
+    )
+    pack_parser.add_argument(
+        "--budget",
+        type=int,
+        default=4000,
+        help="Maximum estimated token budget for Context Pack (default: 4000)",
+    )
+    pack_parser.add_argument(
+        "--format",
+        choices=["markdown", "json"],
+        default="markdown",
+        help="Output format: markdown or json (default: markdown)",
+    )
+    pack_parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="File path to write compiled Context Pack to (default: stdout)",
     )
 
     # Common options for review and consult
@@ -179,16 +263,22 @@ def main(argv: Optional[list] = None) -> int:
 
     # Resolve configuration
     config = resolve_config(
-        cli_models=args.models,
-        cli_api_key=args.api_key,
-        cli_gateway_url=args.gateway_url,
-        cli_output_dir=args.output_dir,
+        cli_models=getattr(args, "models", None),
+        cli_api_key=getattr(args, "api_key", None),
+        cli_gateway_url=getattr(args, "gateway_url", None),
+        cli_output_dir=getattr(args, "output_dir", None),
         cli_min_score=getattr(args, "min_score", 7.0),
         cli_strict=getattr(args, "strict", False),
         cli_repo=getattr(args, "repo", None),
         cli_debate=getattr(args, "debate", None),
         cli_debate_rounds=getattr(args, "debate_rounds", None),
+        cli_use_pack=getattr(args, "pack", None),
+        cli_token_budget=getattr(args, "budget", getattr(args, "token_budget", None)),
+        cli_context_pack=getattr(args, "context_pack", None),
     )
+
+    if args.command == "pack":
+        return handle_pack(args, config)
 
     if not config.models:
         print("[ERROR] No models specified.", file=sys.stderr)
@@ -215,15 +305,37 @@ def main(argv: Optional[list] = None) -> int:
     if args.command == "review":
         diff_text = get_git_diff(config.repo_dir, args.target)
         test_text = load_test_files(config.repo_dir, args.tests)
-        user_prompt = build_review_prompt(diff_text, test_text, args.instructions)
+        context_pack_text = ""
+        if getattr(args, "pack", False) or config.use_pack:
+            print("Compiling targeted Context Pack for review...")
+            pack = compile_context_pack(
+                repo_dir=config.repo_dir,
+                target=args.target,
+                token_budget=config.token_budget,
+            )
+            context_pack_text = pack.to_markdown()
+            print(
+                f"[Context Pack] Attached {len(pack.mandatory_symbols)} Tier 1 and "
+                f"{len(pack.prioritized_symbols)} Tier 2 symbols (~{pack.total_estimated_tokens} tokens)."
+            )
+        user_prompt = build_review_prompt(diff_text, test_text, args.instructions, context_pack_text=context_pack_text)
         system_prompt = DEFAULT_REVIEW_SYSTEM_PROMPT
     else:
         spec_text = load_spec_document(config.repo_dir, args.spec)
-        user_prompt = build_consult_prompt(args.prompt, spec_text)
+        context_pack_text = ""
+        pack_path = getattr(args, "context_pack", None) or config.context_pack_path
+        if pack_path:
+            p = Path(pack_path)
+            if not p.is_absolute():
+                p = config.repo_dir / p
+            if p.is_file():
+                context_pack_text = p.read_text(encoding="utf-8")
+        user_prompt = build_consult_prompt(args.prompt, spec_text, context_pack_text=context_pack_text)
         if not user_prompt.strip():
-            print("[ERROR] Consult mode requires either --prompt or --spec.", file=sys.stderr)
+            print("[ERROR] Consult mode requires either --prompt, --spec, or --context-pack.", file=sys.stderr)
             return 1
         system_prompt = DEFAULT_CONSULT_SYSTEM_PROMPT
+
 
     if config.debate:
         results = asyncio.run(

@@ -33,6 +33,10 @@ class TriadConfig:
     repo_dir: Path = field(default_factory=lambda: Path.cwd())
     debate: bool = False
     debate_rounds: int = 2
+    use_pack: bool = False
+    token_budget: int = 4000
+    context_pack_path: Optional[str] = None
+
 
     @property
     def is_valid(self) -> bool:
@@ -98,6 +102,9 @@ def resolve_config(
     cli_repo: Optional[str] = None,
     cli_debate: Optional[bool] = None,
     cli_debate_rounds: Optional[int] = None,
+    cli_use_pack: Optional[bool] = None,
+    cli_token_budget: Optional[int] = None,
+    cli_context_pack: Optional[str] = None,
 ) -> TriadConfig:
     """Resolve full TriadConfig combining global, local, env, and CLI sources."""
     repo_path = Path(cli_repo).resolve() if cli_repo else Path.cwd().resolve()
@@ -156,6 +163,24 @@ def resolve_config(
     except ValueError:
         debate_rounds = 2
 
+    # Context Pack settings
+    if cli_use_pack is not None:
+        use_pack = bool(cli_use_pack)
+    else:
+        pack_str = _get_val(["TRIAD_PACK", "TRIAD_USE_PACK"])
+        use_pack = (pack_str.lower() in ("1", "true", "yes")) if pack_str else False
+
+    budget_str = _get_val(
+        ["TRIAD_TOKEN_BUDGET"],
+        str(cli_token_budget) if cli_token_budget is not None else None,
+    )
+    try:
+        token_budget = int(budget_str) if budget_str else 4000
+    except ValueError:
+        token_budget = 4000
+
+    context_pack_path = _get_val(["TRIAD_CONTEXT_PACK"], cli_context_pack)
+
     return TriadConfig(
         api_key=api_key,
         gateway_url=gateway_url,
@@ -166,7 +191,11 @@ def resolve_config(
         repo_dir=repo_path,
         debate=debate,
         debate_rounds=debate_rounds,
+        use_pack=use_pack,
+        token_budget=token_budget,
+        context_pack_path=context_pack_path,
     )
+
 
 
 def init_config_file(target_path: Path, is_global: bool = False) -> Path:

@@ -100,8 +100,13 @@ def load_test_files(repo_dir: Path, test_paths: List[str], max_total_chars: int 
     return "\n\n".join(output_blocks)
 
 
-def build_review_prompt(diff_text: str, test_code: str, custom_instructions: str = "") -> str:
-    """Assemble code review prompt payload."""
+def build_review_prompt(
+    diff_text: str,
+    test_code: str,
+    custom_instructions: str = "",
+    context_pack_text: str = "",
+) -> str:
+    """Assemble code review prompt payload with optional Context Pack projection."""
     blocks = [
         "Please conduct a comprehensive, technical peer review of the following changes:\n",
         "### 1. Git Changes (-U2 concise context):",
@@ -109,15 +114,21 @@ def build_review_prompt(diff_text: str, test_code: str, custom_instructions: str
         diff_text.strip() or "(No changes detected in target diff)",
         "```",
     ]
+    if context_pack_text.strip():
+        blocks.extend([
+            "\n### 2. Semantic Context Pack (Deterministic Repository Projection):",
+            context_pack_text.strip(),
+        ])
     if test_code.strip():
         blocks.extend([
-            "\n### 2. Accompanying Unit & Integration Test Suites:",
+            "\n### 3. Accompanying Unit & Integration Test Suites:",
             test_code.strip(),
         ])
     if custom_instructions.strip():
         blocks.extend([
-            "\n### 3. Additional Specific Review Directives:",
+            "\n### 4. Additional Specific Review Directives:",
             custom_instructions.strip(),
         ])
     blocks.append("\nPlease output your structured review with clear findings, a numeric score (Score: X/10), and final verdict.")
     return "\n".join(blocks)
+

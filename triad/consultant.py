@@ -42,11 +42,14 @@ def load_spec_document(repo_dir: Path, spec_path: Optional[str]) -> str:
         return f"# [Error] Failed reading spec file: {e}"
 
 
-def build_consult_prompt(prompt_text: str, spec_text: str = "") -> str:
-    """Assemble architectural consultation prompt."""
+def build_consult_prompt(prompt_text: str, spec_text: str = "", context_pack_text: str = "") -> str:
+    """Assemble architectural consultation prompt with optional Context Pack projection."""
     blocks = []
     if prompt_text.strip():
         blocks.append(f"### Consultation Objective & Questions:\n{prompt_text.strip()}")
     if spec_text.strip():
         blocks.append(f"### Reference Specification / Design Document:\n{spec_text.strip()}")
+    if context_pack_text.strip():
+        blocks.append(f"### Semantic Context Pack (Repository Interface Digest):\n{context_pack_text.strip()}")
     return "\n\n".join(blocks)
+

@@ -80,6 +80,9 @@ triad review --repo /path/to/another/repo --target staged
 
 # Strict CI Gate: fail build if any model rejects or score < 8.0
 triad review --strict --min-score 8.0
+
+# Compile and attach a deterministic Context Pack (AST signatures, 2-tier blast radius, assumption manifest)
+triad review --target staged --pack --token-budget 4000
 ```
 
 ### 2. Multi-Model Architectural Consultation (`triad consult`)
@@ -92,6 +95,9 @@ triad consult --prompt "How to design a durable background task engine with idem
 
 # Consult on a written design document or RFC specification
 triad consult --spec docs/rfc-001-architecture.md --prompt "Evaluate failure modes and security risks."
+
+# Attach a pre-compiled Context Pack to ground consultation in repository signatures
+triad consult --prompt "Review authentication architecture" --context-pack context_pack.md
 ```
 
 ### 3. Multi-Model Deliberation & Debate (`--debate`)
@@ -112,6 +118,27 @@ In Debate Mode:
 - **Round 1 (Independent Assessment):** Each model analyzes the task in isolation.
 - **Round 2 (Cross-Critique & Synthesis):** Each model receives the peer models' Round 1 proposals, critiques flaws and oversights, adopts superior recommendations, and delivers a battle-tested, refined verdict.
 - **Reporting:** Reports track score and verdict progression across rounds (e.g., `8.0 → 9.0/10`) with full transcripts.
+
+---
+
+### 4. Deterministic Context Packs (`triad pack`)
+
+Bridge the context asymmetry gap when reviewing large codebases without token bloat or security risks:
+
+```bash
+# Compile a markdown Context Pack for unstaged git changes
+triad pack
+
+# Compile JSON Context Pack for PR diff against main branch with custom token budget
+triad pack --target origin/main...HEAD --budget 8000 --format json --output context_pack.json
+```
+
+Key Capabilities:
+- **AST Interface Extraction**: Strips function/class implementation bodies while preserving public signatures, types, and docstrings.
+- **2-Tier Blast Radius**: Automatically captures 1-hop mandatory callers/dependencies and budget-pruned 2-hop transitive callers.
+- **Secret Sanitization**: High-confidence redaction of API keys, tokens, and private keys before packaging.
+- **Assumption Manifest**: Tags unindexed third-party packages or dynamic dispatches as explicit assumptions to prevent LLM hallucinations.
+
 
 ---
 
