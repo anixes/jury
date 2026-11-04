@@ -1,13 +1,14 @@
-# Jury Mesh (`jury-mcp`) v3.0
+# Jury
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![MCP Protocol](https://img.shields.io/badge/MCP-Standard%20Stdio-green.svg)](https://modelcontextprotocol.io/)
-[![Architecture: Daemon--less](https://img.shields.io/badge/State%20Engine-SQLite%20WAL%20(Daemon--less)-purple.svg)](#architecture)
+[![CLI: jury](https://img.shields.io/badge/CLI-jury-cyan.svg)](#standalone-cli-usage)
+[![MCP: jury-mcp](https://img.shields.io/badge/MCP-jury--mcp-green.svg)](#model-context-protocol-mcp-integration)
+[![Architecture: Daemon--less](https://img.shields.io/badge/State%20Engine-SQLite%20WAL%20(Daemon--less)-purple.svg)](#architecture-overview)
 
-> **Resilient multi-model deliberation mesh, stdio Model Context Protocol (MCP) server, and zero-token code synthesis engine.**
+> **The Multi-Model Deliberation Engine & Consensus Substrate for AI Coding Agents and Developers.**
 
-Jury Mesh offloads high-stakes architectural planning, diff reviews, and adversarial verification from local coding agents to an orchestrated council of frontier models—operating with **zero resident daemon footprint**, **zero host RCE vulnerabilities**, and **zero IDE timeouts**.
+Jury offloads high-stakes architectural planning, diff reviews, and adversarial verification from local coding agents to an orchestrated council of frontier models—operating with **zero resident daemon footprint**, **zero host RCE vulnerabilities**, and **zero IDE timeouts**.
 
 ---
 
@@ -88,8 +89,8 @@ Jury Mesh offloads high-stakes architectural planning, diff reviews, and adversa
 
 ```bash
 # Clone repository
-git clone https://github.com/anixes/triad.git
-cd triad
+git clone https://github.com/anixes/jury.git
+cd jury
 
 # Install in editable mode
 pip install -e .
