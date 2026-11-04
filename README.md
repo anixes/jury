@@ -41,7 +41,7 @@ Jury offloads high-stakes architectural planning, diff reviews, and adversarial 
    │                                                                        │
    │  [Stage 1: Blind Ballots]                                              │
    │   Alpha (Architect)         Beta (Adversary)        Gamma (Minimalist) │
-   │   GLM-5.3 320B (0.2T)     Qwen 3.8 180B (0.5T)      GLM-5.3 320B (0.6T)│
+   │   e.g. DeepSeek / Claude    e.g. Llama 3.3 / Qwen   e.g. Qwen / GLM    │
    │            │                         │                       │         │
    │            └─────────────────────────┼───────────────────────┘         │
    │                                      ▼                                 │
@@ -51,7 +51,7 @@ Jury offloads high-stakes architectural planning, diff reviews, and adversarial 
    │                                      │                                 │
    │                                      ▼                                 │
    │  [Stage 3: Decoupled Arbitration]                                      │
-   │   Arbiter: Qwen 3.8 / DeepSeek R1                                      │
+   │   Arbiter: Decoupled Judge (e.g. DeepSeek R1 / o3-mini / Qwen)         │
    │   • Reconciles conflicts & produces definitive verdict                 │
    │   • Synthesizes machine-actionable POSIX patch (`git apply`)           │
    │   • Generates OASIS SARIF v2.1.0 diagnostics                           │
@@ -72,10 +72,10 @@ Jury offloads high-stakes architectural planning, diff reviews, and adversarial 
 
 - **Zero-Daemon Architecture**: Operates purely in-process using an embedded SQLite WAL database (`~/.jury/state.db`) guarded by OS file locks. No fragile Docker daemons, background services, or memory leaks.
 - **Differentiated 4-Role Council**:
-  - **Seat 1 (`alpha`)**: Systems Architect & Invariant Verifier (GLM-5.3 320B MoE, temp 0.2)
-  - **Seat 2 (`beta`)**: Adversary, Security & Race Condition Auditor (Qwen 3.8 180B MoE, temp 0.5)
-  - **Seat 3 (`gamma`)**: Simplicity Minimalist & Anti-Bloat / YAGNI Advocate (GLM-5.3 320B MoE, temp 0.6)
-  - **Judge (`arbiter`)**: Decoupled Consensus Synthesizer & Patch Generator (Qwen 3.8 / DeepSeek)
+  - **Seat 1 (`alpha`)**: Systems Architect & Invariant Verifier (e.g. DeepSeek V3, Claude 3.7 Sonnet, GLM-5.3)
+  - **Seat 2 (`beta`)**: Adversary, Security & Race Condition Auditor (e.g. Llama 3.3 70B, Qwen 3.8, GPT-4o)
+  - **Seat 3 (`gamma`)**: Simplicity Minimalist & Anti-Bloat / YAGNI Advocate (e.g. Qwen 2.5 Coder, GLM-5.3)
+  - **Judge (`arbiter`)**: Decoupled Consensus Synthesizer & Patch Generator (e.g. DeepSeek R1, o3-mini)
 - **Zero Host RCE Security**: Raw shell execution is prohibited. Verification tests execute strictly via `TypedVerificationContract` with an immutable runner whitelist (`pytest`, `mypy`, `cargo_test`, `npm_test`, `go_test`) running under `shell=False`.
 - **Pre-Flight Secret Redaction**: All diffs and prompts are sanitized using high-confidence regex combined with Shannon entropy detection ($H \ge 4.5$), replacing credentials with deterministic synthetic tokens (`<REDACTED_API_KEY:CRC32_HEX>`).
 - **5-Vector Composite Cache Key**: SHA-256 fingerprint over `task_intent || git_head || unstaged_diff || staged_diff || untracked_hash || config_hash || prompt_version`. Modifying any file instantly triggers cache invalidation.
@@ -116,49 +116,79 @@ Generate project-local configuration and IDE instruction files (`AGENTS.md`, `.c
 jury init
 ```
 
-### 2. Configure Credentials
-Set your API key via environment variable:
+### 2. Configure Credentials & Providers
+
+Jury is **100% provider-agnostic**. You can use any OpenAI-compatible provider (OpenRouter, Groq, DeepSeek, Cerebras, OpenAI, Anthropic, Constellation Gate, or local Ollama / vLLM).
+
+Set your API keys via environment variables:
 
 ```bash
-# Constellation Gate (Primary Free Frontier Tier)
-export TRIAD_API_KEY="your-api-key"
-# Or on Windows PowerShell:
-$env:TRIAD_API_KEY="your-api-key"
+# OpenRouter (Unified multi-model access)
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Groq (Ultra-fast LPU inference)
+export GROQ_API_KEY="gsk_..."
+
+# DeepSeek / OpenAI / Cerebras
+export DEEPSEEK_API_KEY="sk-..."
+export OPENAI_API_KEY="sk-..."
+
+# Constellation Gate (Free frontier tier)
+export TRIAD_API_KEY="cg-..."
 ```
 
-Or configure `.jury/config.yaml`:
+Or configure your multi-provider council in `.jury/config.yaml`:
 
 ```yaml
 version: "3.0.0"
+
+# 1. Register only the providers you use
 providers:
-  constellation:
-    base_url: "https://gateway.constellationgate.ai/v1"
-    api_key: "${TRIAD_API_KEY}"
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "${OPENROUTER_API_KEY}"
   groq:
     base_url: "https://api.groq.com/openai/v1"
     api_key: "${GROQ_API_KEY}"
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "${DEEPSEEK_API_KEY}"
+  constellation:
+    base_url: "https://gateway.constellationgate.ai/v1"
+    api_key: "${TRIAD_API_KEY}"
+  ollama:
+    base_url: "http://localhost:11434/v1"
+    api_key: "ollama"
 
+# 2. Assign any model from any provider to each seat
 models:
   alpha:
-    model_id: "constellation/glm-5-3-flash-free"
-    provider: "constellation"
+    model_id: "deepseek/deepseek-chat"
+    provider: "openrouter"
     role: "architect"
-    max_diff_tokens: 14000
+    max_diff_tokens: 16000
+    description: "Systems Architect & Invariant Verifier"
+
   beta:
-    model_id: "constellation/qwen3-8-flash-free"
-    provider: "constellation"
+    model_id: "llama-3.3-70b-versatile"
+    provider: "groq"
     role: "adversary"
-    max_diff_tokens: 14000
+    max_diff_tokens: 5500
+    description: "Adversary & Security Auditor"
+
   gamma:
-    model_id: "constellation/glm-5-3-flash-free"
-    provider: "constellation"
+    model_id: "qwen/qwen-2.5-coder-32b-instruct"
+    provider: "openrouter"
     role: "minimalist"
-    max_diff_tokens: 14000
+    max_diff_tokens: 16000
+    description: "Simplicity Minimalist & Anti-Bloat"
+
   arbiter:
-    model_id: "constellation/qwen3-8-flash-free"
-    provider: "constellation"
+    model_id: "deepseek/deepseek-reasoner"
+    provider: "deepseek"
     role: "arbiter"
-    max_diff_tokens: 14000
+    max_diff_tokens: 20000
+    description: "Decoupled Judicial Arbiter"
 
 strict_arbiter_decoupling: false
 quorum_min: 2

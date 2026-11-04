@@ -12,41 +12,60 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 
-DEFAULT_CONFIG_YAML = """# Jury Mesh (jury-mcp) v3.0 Global Configuration
+DEFAULT_CONFIG_YAML = """# Jury (jury-mcp) v3.0 Global Configuration
+# Model-agnostic multi-provider council configuration.
 version: "3.0.0"
+
+# 1. Provider Credentials & Gateways
+# API keys can be specified here or exported as environment variables.
+providers:
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    api_key: "${OPENROUTER_API_KEY}"
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    api_key: "${GROQ_API_KEY}"
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key: "${DEEPSEEK_API_KEY}"
+  constellation:
+    base_url: "https://gateway.constellationgate.ai/v1"
+    api_key: "${TRIAD_API_KEY}"
+  ollama:
+    base_url: "http://localhost:11434/v1"
+    api_key: "ollama"
+
+# 2. Deliberation Panel Topologies
+# Assign any frontier model from any provider to each seat.
 models:
   alpha:
-    model_id: "constellation/glm-5-3-flash-free"
-    provider: "constellation"
+    model_id: "deepseek/deepseek-chat"
+    provider: "openrouter"
     role: "architect"
-    max_diff_tokens: 14000
-    rpm_limit: 30
-    tpm_limit: 120000
-    description: "Systems Architect & Invariant Verifier (GLM-5.3 320B MoE)"
-  beta:
-    model_id: "constellation/qwen3-8-flash-free"
-    provider: "constellation"
-    role: "adversary"
-    max_diff_tokens: 14000
-    rpm_limit: 30
-    tpm_limit: 120000
-    description: "Adversary, Security & Race Condition Auditor (Qwen 3.8 180B MoE)"
-  gamma:
-    model_id: "constellation/glm-5-3-flash-free"
-    provider: "constellation"
-    role: "minimalist"
-    max_diff_tokens: 14000
-    rpm_limit: 30
-    tpm_limit: 120000
-    description: "Simplicity Minimalist & Anti-Bloat Advocate (GLM-5.3 320B MoE)"
-  arbiter:
-    model_id: "constellation/qwen3-8-flash-free"
-    provider: "constellation"
-    role: "arbiter"
     max_diff_tokens: 16000
-    rpm_limit: 30
-    tpm_limit: 120000
-    description: "Judicial Arbiter & Consensus Synthesizer (Qwen 3.8 180B MoE)"
+    description: "Systems Architect & Invariant Verifier"
+
+  beta:
+    model_id: "llama-3.3-70b-versatile"
+    provider: "groq"
+    role: "adversary"
+    max_diff_tokens: 5500
+    description: "Adversary, Security & Race Condition Auditor"
+
+  gamma:
+    model_id: "qwen/qwen-2.5-coder-32b-instruct"
+    provider: "openrouter"
+    role: "minimalist"
+    max_diff_tokens: 16000
+    description: "Simplicity Minimalist & Anti-Bloat Advocate"
+
+  arbiter:
+    model_id: "deepseek/deepseek-reasoner"
+    provider: "deepseek"
+    role: "arbiter"
+    max_diff_tokens: 20000
+    description: "Decoupled Judicial Arbiter & Consensus Synthesizer"
+
 strict_arbiter_decoupling: false
 quorum_min: 2
 request_timeout_seconds: 60.0

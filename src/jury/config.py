@@ -391,6 +391,26 @@ def _compute_config_fingerprint(
     )
 
 
+def _infer_provider_from_model_id(model_id: str, fallback: str = "openrouter") -> str:
+    """Infer the default provider for a model identifier if not explicitly configured."""
+    mid = model_id.lower().strip()
+    if mid.startswith("constellation/"):
+        return "constellation"
+    elif mid.startswith("groq/") or mid.startswith("llama-"):
+        return "groq"
+    elif mid.startswith("deepseek/"):
+        return "deepseek"
+    elif mid.startswith("cerebras/"):
+        return "cerebras"
+    elif mid.startswith("openai/") or mid.startswith("gpt-") or mid.startswith("o1") or mid.startswith("o3"):
+        return "openai"
+    elif mid.startswith("ollama/"):
+        return "ollama"
+    elif "/" in mid:
+        return "openrouter"
+    return fallback
+
+
 def get_config(
     state_dir_override: Optional[Union[str, Path]] = None,
     cli_keys: Optional[Dict[str, str]] = None,
@@ -529,12 +549,18 @@ def get_config(
             role_key = str(role_name).lower().strip()
             if role_key in default_models:
                 merged = default_models[role_key].model_dump()
+                if "model_id" in m_clean and "provider" not in m_clean:
+                    m_clean["provider"] = _infer_provider_from_model_id(
+                        m_clean["model_id"],
+                        fallback=default_models[role_key].provider,
+                    )
                 merged.update(m_clean)
                 models[role_key] = ModelConfig(**merged)
             else:
+                inferred_prov = _infer_provider_from_model_id(str(m_clean.get("model_id", "")))
                 new_entry = {
                     "model_id": str(m_clean.get("model_id", role_key)),
-                    "provider": str(m_clean.get("provider", "constellation")),
+                    "provider": str(m_clean.get("provider", inferred_prov)),
                     "role": str(m_clean.get("role", role_key)),
                     "max_diff_tokens": int(m_clean.get("max_diff_tokens", 8000)),
                     "rpm_limit": int(m_clean.get("rpm_limit", 30)),
