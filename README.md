@@ -1,183 +1,300 @@
-# Triad CLI
+# Jury Mesh (`jury-mcp`) v3.0
 
-**Universal Multi-Model Peer Review & Architectural Consultation CLI**
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Standard%20Stdio-green.svg)](https://modelcontextprotocol.io/)
+[![Architecture: Daemon--less](https://img.shields.io/badge/State%20Engine-SQLite%20WAL%20(Daemon--less)-purple.svg)](#architecture)
 
-Triad brings automated, multi-model code review and architectural consultation to **any project in any programming language** (Python, Rust, TypeScript, Go, Java, C++, etc.).
+> **Resilient multi-model deliberation mesh, stdio Model Context Protocol (MCP) server, and zero-token code synthesis engine.**
 
-Instead of relying on a single AI model's self-critique, Triad prompts multiple independent models concurrently (e.g. via OpenAI-compatible gateways or direct providers), synthesizing their critiques, scores, and verdicts into actionable reports.
+Jury Mesh offloads high-stakes architectural planning, diff reviews, and adversarial verification from local coding agents to an orchestrated council of frontier models—operating with **zero resident daemon footprint**, **zero host RCE vulnerabilities**, and **zero IDE timeouts**.
+
+---
+
+## Architecture Overview
+
+```
+                      ┌──────────────────────────────────────┐
+                      │    Host Coding Agent / User IDE      │
+                      │  (Cursor, Claude Desktop, Antigravity)│
+                      └──────────────────┬───────────────────┘
+                                         │
+                   ┌─────────────────────┴─────────────────────┐
+                   │                                           │
+          [ Standalone CLI ]                           [ MCP Stdio Server ]
+         `jury review | plan`                              `jury-mcp`
+                   │                                           │
+                   └─────────────────────┬─────────────────────┘
+                                         ▼
+                     ┌──────────────────────────────────────┐
+                     │          Jury Mesh Core Engine       │
+                     ├──────────────────────────────────────┤
+                     │ • Secret Redaction (Entropy H ≥ 4.5) │
+                     │ • POSIX Diff Clamper                 │
+                     │ • 5-Vector Composite Cache Key       │
+                     │ • Singleflight Request Coalescing    │
+                     └───────────────────┬──────────────────┘
+                                         ▼
+   ┌────────────────────────────────────────────────────────────────────────┐
+   │                  3-Stage Dialectical Falsification                     │
+   │                                                                        │
+   │  [Stage 1: Blind Ballots]                                              │
+   │   Alpha (Architect)         Beta (Adversary)        Gamma (Minimalist) │
+   │   GLM-5.3 320B (0.2T)     Qwen 3.8 180B (0.5T)      GLM-5.3 320B (0.6T)│
+   │            │                         │                       │         │
+   │            └─────────────────────────┼───────────────────────┘         │
+   │                                      ▼                                 │
+   │  [Stage 2: Cross-Examination]                                          │
+   │   • Unsubstantiated claims discarded                                   │
+   │   • Balanced Position Calibration (BPC) 2-pass permutation             │
+   │                                      │                                 │
+   │                                      ▼                                 │
+   │  [Stage 3: Decoupled Arbitration]                                      │
+   │   Arbiter: Qwen 3.8 / DeepSeek R1                                      │
+   │   • Reconciles conflicts & produces definitive verdict                 │
+   │   • Synthesizes machine-actionable POSIX patch (`git apply`)           │
+   │   • Generates OASIS SARIF v2.1.0 diagnostics                           │
+   └──────────────────────────────────────┬─────────────────────────────────┘
+                                          ▼
+                     ┌──────────────────────────────────────┐
+                     │   Daemon-less State Engine (WAL)     │
+                     │        `~/.jury/state.db`            │
+                     │ • OS FileLock + BEGIN IMMEDIATE      │
+                     │ • Continuous Two-Phase Rate Limiting │
+                     │ • Persistent Audit Ledger            │
+                     └──────────────────────────────────────┘
+```
+
+---
+
+## Key Capabilities
+
+- **Zero-Daemon Architecture**: Operates purely in-process using an embedded SQLite WAL database (`~/.jury/state.db`) guarded by OS file locks. No fragile Docker daemons, background services, or memory leaks.
+- **Differentiated 4-Role Council**:
+  - **Seat 1 (`alpha`)**: Systems Architect & Invariant Verifier (GLM-5.3 320B MoE, temp 0.2)
+  - **Seat 2 (`beta`)**: Adversary, Security & Race Condition Auditor (Qwen 3.8 180B MoE, temp 0.5)
+  - **Seat 3 (`gamma`)**: Simplicity Minimalist & Anti-Bloat / YAGNI Advocate (GLM-5.3 320B MoE, temp 0.6)
+  - **Judge (`arbiter`)**: Decoupled Consensus Synthesizer & Patch Generator (Qwen 3.8 / DeepSeek)
+- **Zero Host RCE Security**: Raw shell execution is prohibited. Verification tests execute strictly via `TypedVerificationContract` with an immutable runner whitelist (`pytest`, `mypy`, `cargo_test`, `npm_test`, `go_test`) running under `shell=False`.
+- **Pre-Flight Secret Redaction**: All diffs and prompts are sanitized using high-confidence regex combined with Shannon entropy detection ($H \ge 4.5$), replacing credentials with deterministic synthetic tokens (`<REDACTED_API_KEY:CRC32_HEX>`).
+- **5-Vector Composite Cache Key**: SHA-256 fingerprint over `task_intent || git_head || unstaged_diff || staged_diff || untracked_hash || config_hash || prompt_version`. Modifying any file instantly triggers cache invalidation.
+- **Machine-Actionable Outputs**:
+  - Valid POSIX unified diffs (`diff --git`) ready for `git apply`.
+  - Industry-standard **OASIS SARIF v2.1.0** diagnostics for IDE problem panes and CI gates.
 
 ---
 
 ## Installation
 
-Install Triad as a standalone CLI tool in your Python environment:
-
 ```bash
-# Editable install from local clone
+# Clone repository
 git clone https://github.com/anixes/triad.git
 cd triad
+
+# Install in editable mode
 pip install -e .
 
-# Or direct install via pip
-pip install git+https://github.com/anixes/triad.git
+# Or with dev dependencies (pytest, etc.)
+pip install -e ".[dev]"
 ```
 
-Once installed, the `triad` command is globally available in your terminal.
+Verify the installation:
+```bash
+jury --version
+# Outputs: jury, version 3.0.0
+```
 
 ---
 
-## Setup & Configuration
+## Quickstart
 
-Triad requires an API key and a list of models to consult. Configuration is resolved hierarchically:
-
-1. **CLI Flags** (`--models`, `--api-key`, `--gateway-url`, etc.) [Highest Priority]
-2. **Environment Variables** (`TRIAD_API_KEY`, `TRIAD_MODELS`, `TRIAD_GATEWAY_URL` — standard 12-factor / CI support)
-3. **Project Local Config** (`.triad.env` or `.env` in the current project)
-4. **User Global Config** (`~/.triad/config.env` — recommended so it works anywhere on your system)
-
-### Initialize Configuration
-
-#### Global Setup (Works anywhere on your system):
-```bash
-triad init --global
-```
-This creates `~/.triad/config.env`. Open it and fill in your gateway key and models:
-```env
-TRIAD_GATEWAY_URL=https://gateway.constellationgate.ai/v1
-TRIAD_API_KEY=your-api-key-here
-TRIAD_MODELS=provider/model-1,provider/model-2
-```
-
-#### Project-Local Setup:
-```bash
-triad init
-```
-This creates `.triad.env` in the current working directory.
-
----
-
-## Usage
-
-### 1. Multi-Model Code Review (`triad review`)
-
-Run Triad inside any git repository:
+### 1. Initialize Configuration & Agent Rules
+Generate project-local configuration and IDE instruction files (`AGENTS.md`, `.cursor/rules/jury.mdc`, `CLAUDE.md`):
 
 ```bash
-# Review unstaged changes in the current repo
-triad review
-
-# Review staged changes (--cached)
-triad review --target staged
-
-# Review changes against a base branch
-triad review --target origin/main...HEAD
-
-# Include specific unit test files for contextual evaluation
-triad review --tests tests/unit/test_auth.py tests/unit/test_api.py
-
-# Review changes in a different directory
-triad review --repo /path/to/another/repo --target staged
-
-# Strict CI Gate: fail build if any model rejects or score < 8.0
-triad review --strict --min-score 8.0
-
-# Compile and attach a deterministic Context Pack (AST signatures, 2-tier blast radius, assumption manifest)
-triad review --target staged --pack --token-budget 4000
+jury init
 ```
 
-### 2. Multi-Model Architectural Consultation (`triad consult`)
-
-Consult multiple models on system design or refactoring before writing code:
+### 2. Configure Credentials
+Set your API key via environment variable:
 
 ```bash
-# Ask an architectural question
-triad consult --prompt "How to design a durable background task engine with idempotency?"
-
-# Consult on a written design document or RFC specification
-triad consult --spec docs/rfc-001-architecture.md --prompt "Evaluate failure modes and security risks."
-
-# Attach a pre-compiled Context Pack to ground consultation in repository signatures
-triad consult --prompt "Review authentication architecture" --context-pack context_pack.md
+# Constellation Gate (Primary Free Frontier Tier)
+export TRIAD_API_KEY="your-api-key"
+# Or on Windows PowerShell:
+$env:TRIAD_API_KEY="your-api-key"
 ```
 
-### 3. Multi-Model Deliberation & Debate (`--debate`)
-
-By default, Triad runs in **blind peer review** mode (models generate their reviews independently without seeing each other's outputs, eliminating anchoring bias and groupthink).
-
-When you want the models to **actively challenge, cross-critique, and refine each other's findings**, pass `--debate`:
-
-```bash
-# Run a 2-round architectural debate (Round 1: blind, Round 2: cross-critique & synthesis)
-triad consult --prompt "Design consensus engine" --debate
-
-# Run multi-round code review debate with calibrated scoring
-triad review --target staged --debate --debate-rounds 2
-```
-
-In Debate Mode:
-- **Round 1 (Independent Assessment):** Each model analyzes the task in isolation.
-- **Round 2 (Cross-Critique & Synthesis):** Each model receives the peer models' Round 1 proposals, critiques flaws and oversights, adopts superior recommendations, and delivers a battle-tested, refined verdict.
-- **Reporting:** Reports track score and verdict progression across rounds (e.g., `8.0 → 9.0/10`) with full transcripts.
-
----
-
-### 4. Deterministic Context Packs (`triad pack`)
-
-Bridge the context asymmetry gap when reviewing large codebases without token bloat or security risks:
-
-```bash
-# Compile a markdown Context Pack for unstaged git changes
-triad pack
-
-# Compile JSON Context Pack for PR diff against main branch with custom token budget
-triad pack --target origin/main...HEAD --budget 8000 --format json --output context_pack.json
-```
-
-Key Capabilities:
-- **AST Interface Extraction**: Strips function/class implementation bodies while preserving public signatures, types, and docstrings.
-- **2-Tier Blast Radius**: Automatically captures 1-hop mandatory callers/dependencies and budget-pruned 2-hop transitive callers.
-- **Secret Sanitization**: High-confidence redaction of API keys, tokens, and private keys before packaging.
-- **Assumption Manifest**: Tags unindexed third-party packages or dynamic dispatches as explicit assumptions to prevent LLM hallucinations.
-
-
----
-
-## Output & Reports
-
-Triad produces structured Markdown and JSON reports:
-- Markdown summary table and individual analyses: `reports/triad/consolidated_review_report.md`
-- Machine-readable JSON for CI integration: `reports/triad/consolidated_review_report.json`
-- Full individual model output logs: `reports/triad/{model_name}_{mode}.md`
-
----
-
-## CI / CD Integration (GitHub Actions Example)
-
-Add Triad to your pull request workflow (`.github/workflows/triad-review.yml`):
+Or configure `.jury/config.yaml`:
 
 ```yaml
-name: Triad Multi-Model Peer Review
+version: "3.0.0"
+providers:
+  constellation:
+    base_url: "https://gateway.constellationgate.ai/v1"
+    api_key: "${TRIAD_API_KEY}"
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    api_key: "${GROQ_API_KEY}"
 
-on: [pull_request]
+models:
+  alpha:
+    model_id: "constellation/glm-5-3-flash-free"
+    provider: "constellation"
+    role: "architect"
+    max_diff_tokens: 14000
+  beta:
+    model_id: "constellation/qwen3-8-flash-free"
+    provider: "constellation"
+    role: "adversary"
+    max_diff_tokens: 14000
+  gamma:
+    model_id: "constellation/glm-5-3-flash-free"
+    provider: "constellation"
+    role: "minimalist"
+    max_diff_tokens: 14000
+  arbiter:
+    model_id: "constellation/qwen3-8-flash-free"
+    provider: "constellation"
+    role: "arbiter"
+    max_diff_tokens: 14000
 
-jobs:
-  peer-review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Triad
-        run: pip install ./packages/triad
-
-      - name: Run Strict Peer Review
-        env:
-          TRIAD_API_KEY: ${{ secrets.GATE_API_KEY }}
-          TRIAD_MODELS: ${{ vars.TRIAD_MODELS }}
-        run: triad review --target origin/${{ github.base_ref }}...HEAD --strict --min-score 7.5
+strict_arbiter_decoupling: false
+quorum_min: 2
 ```
+
+### 3. Verify Health
+Run pre-flight connectivity, token bucket, and database lock diagnostics:
+
+```bash
+jury test
+```
+
+---
+
+## Standalone CLI Usage
+
+### Code Review (`jury review`)
+Audit working tree modifications before committing:
+
+```bash
+# Review staged changes
+jury review --staged
+
+# Review unstaged changes
+jury review
+
+# Strict CI Gate: fail build on non-approval or security findings
+jury review --staged --strict
+
+# Output machine-readable JSON or SARIF report
+jury review --staged --json
+jury review --staged --sarif report.sarif
+```
+
+### Architectural Planning (`jury plan`)
+Submit an architectural specification or feature request for rigorous multi-model critique:
+
+```bash
+jury plan --spec docs/rfc-caching.md
+jury plan --spec "Design a distributed write-ahead log with raft consensus"
+```
+
+### Freeform Consultation (`jury ask`)
+Ask specific architectural or security questions:
+
+```bash
+jury ask "What are the edge-case failure modes of two-tier file locking on Windows NTFS?"
+```
+
+### Audit Logs & Telemetry (`jury logs`)
+Inspect deliberation history and metrics stored in SQLite WAL:
+
+```bash
+# View last 10 deliberation tickets
+jury logs --limit 10
+
+# View detailed JSON audit trail
+jury logs --json
+```
+
+---
+
+## Model Context Protocol (MCP) Integration
+
+Jury Mesh exposes native tools over stdio JSON-RPC for Claude Desktop, Cursor, Antigravity, Cline, and Roo Code.
+
+### Server Tools
+- `jury_review`: Reviews working tree changes or raw git diffs.
+- `jury_plan`: Conducts multi-model architectural falsification on a specification.
+- `jury_ask`: Deliberates on complex technical queries across juror models.
+
+### Claude Desktop Configuration
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "jury": {
+      "command": "jury-mcp",
+      "args": [],
+      "env": {
+        "TRIAD_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+### Cursor / Cline Configuration
+In `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jury": {
+      "command": "jury-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+> **Note on Stdio Hygiene**: `jury-mcp` strictly isolates `stdout` exclusively for JSON-RPC framing. All internal logging, probe messages, and warnings are redirected to `stderr`.
+
+---
+
+## Deterministic CLI Exit Codes
+
+Jury Mesh provides deterministic, script-friendly exit codes for seamless CI/CD integration:
+
+| Exit Code | Classification | Description |
+| :---: | :--- | :--- |
+| **`0`** | `APPROVED` | Consensus reached, review approved, or command succeeded cleanly. |
+| **`1`** | `REJECTED` | Changes requested, architectural objections raised, or test failed. |
+| **`2`** | `QUORUM_COLLAPSE` | Upstream provider outage or failure to meet minimum quorum ($Q < Q_{min}$). |
+| **`3`** | `USAGE_ERROR` | Invalid CLI arguments, missing configuration, or unreadable files. |
+| **`4`** | `SECURITY_VIOLATION` | Secret leak detected or contract validation failure. |
+
+---
+
+## Development & Testing
+
+Run the comprehensive test suite:
+
+```bash
+# Run unit tests
+pytest tests/unit/ -v
+
+# Run E2E suites
+pytest tests/e2e/ -v
+
+# Run full test suite with coverage
+pytest --cov=src/jury tests/
+```
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
