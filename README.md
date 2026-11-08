@@ -2,6 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![M8ven Score](https://m8ven.ai/badge/mcp/anixes-jury-oxbz01)](https://m8ven.ai/mcp/anixes-jury-oxbz01?s=readme)
 [![CLI: jury](https://img.shields.io/badge/CLI-jury-cyan.svg)](#standalone-cli-usage)
 [![MCP: jury-mcp](https://img.shields.io/badge/MCP-jury--mcp-green.svg)](#model-context-protocol-mcp-integration)
 [![Architecture: Daemon--less](https://img.shields.io/badge/State%20Engine-SQLite%20WAL%20(Daemon--less)-purple.svg)](#architecture-overview)
