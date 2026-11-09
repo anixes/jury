@@ -295,6 +295,79 @@ class TestReviewCommand:
         assert "verdict" in data
         assert "findings" in data
 
+    def test_review_format_json_with_breaking_input(self, runner: CliRunner, isolated_git_repo: Path, monkeypatch: pytest.MonkeyPatch):
+        """Verifies jury review --json preserves breaking_input in findings."""
+        from unittest.mock import AsyncMock
+        from jury.deliberation.mesh import DeliberationMesh, ReviewVerdict
+        from jury.deliberation.rubrics import Finding
+
+        test_file = isolated_git_repo / "exploit.py"
+        test_file.write_text("def vuln(): pass\n", encoding="utf-8")
+        subprocess.run(["git", "add", "exploit.py"], cwd=str(isolated_git_repo), check=True)
+
+        mock_verdict = ReviewVerdict(
+            verdict="REJECTED",
+            score=5.0,
+            consensus_score=0.9,
+            entropy_bpde=0.1,
+            findings=[
+                Finding(
+                    file_path="exploit.py",
+                    line_start=1,
+                    line_end=1,
+                    severity="CRITICAL",
+                    category="security",
+                    issue="RCE in parameter parsing",
+                    breaking_input="__import__('os').system('id')",
+                )
+            ],
+            deliberation_markdown="# Verdict",
+        )
+
+        monkeypatch.setattr(DeliberationMesh, "review", AsyncMock(return_value=mock_verdict))
+
+        result = runner.invoke(cli, ["review", "--staged", "--json"])
+        assert result.exit_code in (0, 1)
+        data = json.loads(result.stdout)
+        assert len(data["findings"]) == 1
+        assert data["findings"][0]["breaking_input"] == "__import__('os').system('id')"
+
+    def test_review_format_text_renders_breaking_input(self, runner: CliRunner, isolated_git_repo: Path, monkeypatch: pytest.MonkeyPatch):
+        """Verifies jury review rich terminal table renders Breaking Input:."""
+        from unittest.mock import AsyncMock
+        from jury.deliberation.mesh import DeliberationMesh, ReviewVerdict
+        from jury.deliberation.rubrics import Finding
+
+        test_file = isolated_git_repo / "exploit.py"
+        test_file.write_text("def vuln(): pass\n", encoding="utf-8")
+        subprocess.run(["git", "add", "exploit.py"], cwd=str(isolated_git_repo), check=True)
+
+        mock_verdict = ReviewVerdict(
+            verdict="REJECTED",
+            score=5.0,
+            consensus_score=0.9,
+            entropy_bpde=0.1,
+            findings=[
+                Finding(
+                    file_path="exploit.py",
+                    line_start=1,
+                    line_end=1,
+                    severity="CRITICAL",
+                    category="security",
+                    issue="RCE in parameter parsing",
+                    breaking_input="__import__('os').system('id')",
+                )
+            ],
+            deliberation_markdown="# Verdict",
+        )
+
+        monkeypatch.setattr(DeliberationMesh, "review", AsyncMock(return_value=mock_verdict))
+
+        result = runner.invoke(cli, ["review", "--staged"])
+        assert result.exit_code in (0, 1)
+        assert "Breaking Input:" in result.stdout
+        assert "__import__('os')" in result.stdout
+
     def test_review_empty_diff(self, runner: CliRunner, isolated_git_repo: Path):
         """Verifies jury review handles empty diff without errors."""
         result = runner.invoke(cli, ["review", "--staged"])

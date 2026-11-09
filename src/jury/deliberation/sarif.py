@@ -91,7 +91,7 @@ class SarifReport:
             # Build SARIF rule definition
             if rule_id not in rules_dict:
                 rule_desc = finding.issue[:150]
-                rules_dict[rule_id] = {
+                rule_entry: Dict[str, Any] = {
                     "id": rule_id,
                     "name": f"{finding.category.title()}Defect",
                     "shortDescription": {"text": rule_desc},
@@ -102,8 +102,15 @@ class SarifReport:
                         "severity": finding.severity,
                     },
                 }
-                if finding.proof_or_refutation:
-                    rules_dict[rule_id]["help"] = {"text": finding.proof_or_refutation}
+                help_text = finding.proof_or_refutation or ""
+                if finding.breaking_input:
+                    if help_text:
+                        help_text += f"\n\n**Reproducible Breaking Input / Counterexample:**\n```\n{finding.breaking_input.strip()}\n```"
+                    else:
+                        help_text = f"**Reproducible Breaking Input / Counterexample:**\n```\n{finding.breaking_input.strip()}\n```"
+                if help_text:
+                    rule_entry["help"] = {"text": help_text, "markdown": help_text}
+                rules_dict[rule_id] = rule_entry
 
             # Normalize file URI
             norm_path = finding.file_path.replace("\\", "/").lstrip("/")
@@ -115,10 +122,28 @@ class SarifReport:
                 "startColumn": 1,
             }
 
+            message_obj: Dict[str, str] = {"text": finding.issue}
+            if finding.breaking_input:
+                message_obj["markdown"] = (
+                    f"{finding.issue}\n\n"
+                    f"**Reproducible Breaking Input / Counterexample:**\n"
+                    f"```\n{finding.breaking_input.strip()}\n```"
+                )
+
+            result_properties: Dict[str, Any] = {
+                "category": finding.category,
+                "severity": finding.severity,
+            }
+            if finding.breaking_input:
+                result_properties["breaking_input"] = finding.breaking_input
+                result_properties["breakingInput"] = finding.breaking_input
+            if finding.proof_or_refutation:
+                result_properties["proof"] = finding.proof_or_refutation
+
             result_entry: Dict[str, Any] = {
                 "ruleId": rule_id,
                 "level": sarif_level,
-                "message": {"text": finding.issue},
+                "message": message_obj,
                 "locations": [
                     {
                         "physicalLocation": {
@@ -130,6 +155,7 @@ class SarifReport:
                         }
                     }
                 ],
+                "properties": result_properties,
             }
 
             # Optional automated fix replacement

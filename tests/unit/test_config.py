@@ -77,21 +77,21 @@ def test_fallback_to_defaults_when_no_config_exists(tmp_path: Path):
 
     assert isinstance(cfg, JuryConfig)
     # Built-in model defaults
-    assert cfg.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
-    assert cfg.models["alpha"].provider == "constellation"
+    assert cfg.models["alpha"].model_id == "deepseek/deepseek-chat"
+    assert cfg.models["alpha"].provider == "openrouter"
     assert cfg.models["alpha"].role == "architect"
-    assert cfg.models["alpha"].max_diff_tokens == 14000
+    assert cfg.models["alpha"].max_diff_tokens == 16000
 
-    assert cfg.models["beta"].model_id == "constellation/qwen3-8-flash-free"
-    assert cfg.models["beta"].provider == "constellation"
+    assert cfg.models["beta"].model_id == "llama-3.3-70b-versatile"
+    assert cfg.models["beta"].provider == "groq"
     assert cfg.models["beta"].role == "adversary"
 
-    assert cfg.models["gamma"].model_id == "constellation/glm-5-3-flash-free"
-    assert cfg.models["gamma"].provider == "constellation"
+    assert cfg.models["gamma"].model_id == "qwen/qwen-2.5-coder-32b-instruct"
+    assert cfg.models["gamma"].provider == "openrouter"
     assert cfg.models["gamma"].role == "minimalist"
 
-    assert cfg.models["arbiter"].model_id == "constellation/qwen3-8-flash-free"
-    assert cfg.models["arbiter"].provider == "constellation"
+    assert cfg.models["arbiter"].model_id == "llama-3.3-70b-versatile"
+    assert cfg.models["arbiter"].provider == "groq"
     assert cfg.models["arbiter"].role == "arbiter"
     assert cfg.strict_arbiter_decoupling is False
 
@@ -141,8 +141,8 @@ quorum_min: 3
     assert cfg.models["arbiter"].max_diff_tokens == 20000
 
     # Alpha and Beta should retain built-in defaults
-    assert cfg.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
-    assert cfg.models["beta"].model_id == "constellation/qwen3-8-flash-free"
+    assert cfg.models["alpha"].model_id == "deepseek/deepseek-chat"
+    assert cfg.models["beta"].model_id == "llama-3.3-70b-versatile"
 
     # Scalar setting from YAML
     assert cfg.quorum_min == 3
@@ -175,7 +175,7 @@ models:
     assert cfg.models["arbiter"].model_id == "openai/o3-mini"
     assert cfg.models["arbiter"].provider == "openrouter"
     # Unspecified models remain defaults
-    assert cfg.models["gamma"].model_id == "constellation/glm-5-3-flash-free"
+    assert cfg.models["gamma"].model_id == "qwen/qwen-2.5-coder-32b-instruct"
 
 
 def test_direct_env_var_model_and_provider_overrides(monkeypatch: pytest.MonkeyPatch):
@@ -233,7 +233,7 @@ def test_precedence_env_overrides_beat_yaml_and_defaults(tmp_path: Path, monkeyp
     assert cfg.models["arbiter"].model_id == "yaml-arbiter-model"
 
     # Alpha remains default
-    assert cfg.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
+    assert cfg.models["alpha"].model_id == "deepseek/deepseek-chat"
 
 
 def test_custom_providers_in_yaml(tmp_path: Path):
@@ -276,9 +276,9 @@ def test_corrupt_yaml_graceful_fallback(tmp_path: Path, monkeypatch: pytest.Monk
     cfg = get_config(reload=True)
 
     # Should safely return default model configuration
-    assert cfg.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
-    assert cfg.models["gamma"].model_id == "constellation/glm-5-3-flash-free"
-    assert cfg.models["arbiter"].model_id == "constellation/qwen3-8-flash-free"
+    assert cfg.models["alpha"].model_id == "deepseek/deepseek-chat"
+    assert cfg.models["gamma"].model_id == "qwen/qwen-2.5-coder-32b-instruct"
+    assert cfg.models["arbiter"].model_id == "llama-3.3-70b-versatile"
 
 
 def test_cli_config_flag_invokes_custom_configuration(tmp_path: Path):
@@ -346,7 +346,7 @@ def test_loading_models_from_state_dir(tmp_path: Path, monkeypatch: pytest.Monke
     cfg = get_config(reload=True)
     assert cfg.models["alpha"].model_id == "model-from-state-dir"
     # Unspecified models remain defaults
-    assert cfg.models["beta"].model_id == "constellation/qwen3-8-flash-free"
+    assert cfg.models["beta"].model_id == "llama-3.3-70b-versatile"
 
 
 def test_resolve_config_path_default_state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -364,7 +364,7 @@ def test_resolve_config_path_default_state_dir(tmp_path: Path, monkeypatch: pyte
 def test_automatic_cache_invalidation_on_env_change(monkeypatch: pytest.MonkeyPatch):
     """Verify get_config() automatically detects environment variable changes without explicit reload."""
     c1 = get_config()
-    assert c1.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
+    assert c1.models["alpha"].model_id == "deepseek/deepseek-chat"
 
     # Mutate environment override
     monkeypatch.setenv("JURY_ALPHA_MODEL", "dynamically-updated-alpha")
@@ -413,10 +413,10 @@ def test_yaml_string_shorthand_and_none_resilience(tmp_path: Path, monkeypatch: 
 
     cfg = get_config(reload=True)
     assert cfg.models["alpha"].model_id == "shorthand-alpha-model-id"
-    assert cfg.models["alpha"].provider == "constellation"  # Default preserved
+    assert cfg.models["alpha"].provider == "openrouter"  # Default preserved
 
     assert cfg.models["gamma"].model_id == "gamma-null-test"
-    assert cfg.models["gamma"].max_diff_tokens == 14000  # Default preserved despite null in YAML
+    assert cfg.models["gamma"].max_diff_tokens == 16000  # Default preserved despite null in YAML
 
 
 def test_strict_arbiter_decoupling_toggle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

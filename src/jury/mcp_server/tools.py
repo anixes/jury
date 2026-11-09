@@ -368,13 +368,23 @@ async def execute_jury_review(
     ticket_id = f"tkt_{uuid.uuid4().hex[:8]}"
     findings_data = [
         {
-            "id": f.id,
+            # Canonical Finding attributes
+            "finding_id": getattr(f, "finding_id", getattr(f, "id", None)),
             "severity": f.severity,
-            "title": f.title,
-            "description": f.description,
+            "category": getattr(f, "category", "general"),
+            "issue": getattr(f, "issue", getattr(f, "title", getattr(f, "description", ""))),
             "file_path": f.file_path,
-            "line_number": f.line_number,
-            "suggested_fix": f.suggested_fix,
+            "line_start": getattr(f, "line_start", getattr(f, "line_number", 1)),
+            "line_end": getattr(f, "line_end", getattr(f, "line_start", 1)),
+            "suggested_replacement": getattr(f, "suggested_replacement", getattr(f, "suggested_fix", None)),
+            "breaking_input": getattr(f, "breaking_input", None),
+            "proof_or_refutation": getattr(f, "proof_or_refutation", ""),
+            # Backwards-compatibility aliases
+            "id": getattr(f, "finding_id", getattr(f, "id", None)),
+            "title": getattr(f, "issue", getattr(f, "title", "")),
+            "description": getattr(f, "issue", getattr(f, "description", "")),
+            "line_number": getattr(f, "line_start", getattr(f, "line_number", 1)),
+            "suggested_fix": getattr(f, "suggested_replacement", getattr(f, "suggested_fix", None)),
         }
         for f in verdict.findings
     ]

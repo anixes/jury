@@ -208,6 +208,7 @@ def review_cmd(
                     "severity": f.severity,
                     "category": f.category,
                     "issue": f.issue,
+                    "breaking_input": getattr(f, "breaking_input", None),
                     "proof_or_refutation": f.proof_or_refutation,
                     "suggested_replacement": f.suggested_replacement,
                 }
@@ -256,7 +257,17 @@ def review_cmd(
             for f in verdict.findings:
                 sev_color = "red" if f.severity in ("CRITICAL", "HIGH") else "yellow" if f.severity == "MEDIUM" else "blue"
                 loc = f"{f.file_path}:{f.line_start}-{f.line_end}"
-                issue_text = f"{f.issue}\n[dim]Fix: {f.suggested_replacement}[/dim]" if f.suggested_replacement else f.issue
+                parts = [f.issue]
+                breaking = getattr(f, "breaking_input", None)
+                if breaking:
+                    b_clean = breaking.strip()
+                    if "\n" in b_clean:
+                        parts.append(f"[bold red]Breaking Input:[/bold red]\n[bold yellow]{b_clean}[/bold yellow]")
+                    else:
+                        parts.append(f"[bold red]Breaking Input:[/bold red] [bold yellow]{b_clean}[/bold yellow]")
+                if f.suggested_replacement:
+                    parts.append(f"[dim]Fix: {f.suggested_replacement}[/dim]")
+                issue_text = "\n".join(parts)
                 table.add_row(f"[{sev_color}]{f.severity}[/{sev_color}]", loc, f.category, issue_text)
 
             console.print(table)

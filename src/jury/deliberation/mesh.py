@@ -1030,8 +1030,21 @@ class DeliberationMesh(DeliberationService):
             except Exception:
                 pass
 
-        if not findings and cross_exam.surviving_findings:
+        if not findings and cross_exam and cross_exam.surviving_findings:
             findings = cross_exam.surviving_findings
+        elif cross_exam and cross_exam.surviving_findings:
+            # Defensive Reconciliation: Re-attach breaking_input from Stage 1/2 if Arbiter omitted it
+            for finding in findings:
+                if not finding.breaking_input:
+                    for orig in cross_exam.surviving_findings:
+                        if orig.file_path == finding.file_path and (
+                            (orig.finding_id and orig.finding_id == finding.finding_id) or
+                            (max(orig.line_start, finding.line_start) <= min(orig.line_end, finding.line_end)) or
+                            (orig.issue.lower() in finding.issue.lower() or finding.issue.lower() in orig.issue.lower())
+                        ):
+                            if orig.breaking_input:
+                                finding.breaking_input = orig.breaking_input
+                                break
 
         patch = payload1.get("unified_patch") or payload2.get("unified_patch")
         contract = payload1.get("verification_contract") or payload2.get("verification_contract")
@@ -1069,6 +1082,9 @@ class DeliberationMesh(DeliberationService):
             findings_sec = "\n### Surviving Defects & Risks\n"
             for f in findings:
                 findings_sec += f"- **[{f.severity}]** `{f.file_path}:{f.line_start}`: {f.issue}\n"
+                breaking = getattr(f, "breaking_input", None)
+                if breaking:
+                    findings_sec += f"  - **Reproducible Breaking Input / Counterexample**:\n    ```\n    {breaking.strip()}\n    ```\n"
                 if f.proof_or_refutation:
                     findings_sec += f"  *Proof/Citation*: {f.proof_or_refutation}\n"
 
@@ -1150,12 +1166,14 @@ class DeliberationMesh(DeliberationService):
                     locs = res.get("locations", [])
                     uri = locs[0].get("physicalLocation", {}).get("artifactLocation", {}).get("uri", "unknown") if locs else "unknown"
                     start_l = locs[0].get("physicalLocation", {}).get("region", {}).get("startLine", 1) if locs else 1
+                    breaking_inp = res.get("properties", {}).get("breaking_input") or res.get("properties", {}).get("breakingInput")
                     findings.append(Finding(
                         file_path=uri,
                         line_start=start_l,
                         line_end=start_l,
                         severity="HIGH" if lvl == "error" else "MEDIUM",
                         issue=msg,
+                        breaking_input=breaking_inp,
                     ))
 
         return ReviewVerdict(

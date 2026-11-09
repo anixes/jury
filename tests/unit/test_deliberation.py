@@ -44,12 +44,18 @@ from jury.deliberation.patch import (
 from jury.deliberation.rubrics import (
     ArbitrationVerdict,
     AskBallot,
+    CrossExamChallenge,
+    CrossExamResult,
     Finding,
     JurorBallot,
     PlanBallot,
     ReviewBallot,
     StylometricSanitizer,
     extract_json_payload,
+    JUROR_BETA_SYSTEM_PROMPT,
+    build_stage1_review_prompt,
+    build_stage2_crossexam_prompt,
+    build_stage3_arbiter_prompt,
 )
 from jury.deliberation.sarif import (
     SARIF_SCHEMA_URI,
@@ -99,6 +105,301 @@ def test_finding_model_validation():
         issue="Minor comment typo",
     )
     assert f2.line_end == 20
+
+
+def test_finding_model_breaking_input_normalization():
+    # 1. Default is None
+    f_default = Finding(
+        file_path="src/api.py",
+        severity="MEDIUM",
+        issue="Missing input validation",
+    )
+    assert f_default.breaking_input is None
+
+    # 2. String payload preserved
+    payload = "def test_exploit(): assert False"
+    f_str = Finding(
+        file_path="src/api.py",
+        severity="HIGH",
+        issue="Vulnerability",
+        breaking_input=payload,
+    )
+    assert f_str.breaking_input == payload
+
+    # 3. Normalization of empty / whitespace strings to None
+    for empty_val in ("", "   ", "\t\n"):
+        f_empty = Finding(
+            file_path="src/api.py",
+            severity="LOW",
+            issue="Issue",
+            breaking_input=empty_val,
+        )
+        assert f_empty.breaking_input is None
+
+    # 4. Normalization of placeholder / sentinel values to None
+    for sentinel in ("None", "null", "N/A", "undefined", "nil", "no breaking input"):
+        f_sentinel = Finding(
+            file_path="src/api.py",
+            severity="LOW",
+            issue="Issue",
+            breaking_input=sentinel,
+        )
+        assert f_sentinel.breaking_input is None
+
+    # 5. Normalization of dict payloads to formatted JSON
+    dict_payload = {"user": "admin' --", "action": "delete"}
+    f_dict = Finding(
+        file_path="src/api.py",
+        severity="CRITICAL",
+        issue="SQLi",
+        breaking_input=dict_payload,
+    )
+    assert f_dict.breaking_input is not None
+    assert "admin' --" in f_dict.breaking_input
+    parsed = json.loads(f_dict.breaking_input)
+    assert parsed["user"] == "admin' --"
+
+    # 6. Normalization of list payloads
+    list_payload = ["--payload", 99999]
+    f_list = Finding(
+        file_path="src/api.py",
+        severity="HIGH",
+        issue="Buffer overflow",
+        breaking_input=list_payload,
+    )
+    assert f_list.breaking_input is not None
+    assert "99999" in f_list.breaking_input
+
+    # 7. Normalization of numeric input
+    f_num = Finding(
+        file_path="src/api.py",
+        severity="MEDIUM",
+        issue="Integer boundary",
+        breaking_input=9223372036854775808,
+    )
+    assert f_num.breaking_input == "9223372036854775808"
+
+    # 8. Model dump and roundtrip serialization
+    dumped = f_str.model_dump()
+    assert dumped["breaking_input"] == payload
+    reconstituted = Finding(**dumped)
+    assert reconstituted.breaking_input == payload
+
+
+def test_stage1_review_prompt_has_breaking_input_guidance():
+    prompt = build_stage1_review_prompt(
+        task_intent="Audit authentication",
+        diff_text="diff --git a/auth.py b/auth.py\n+password = input()",
+        role="Juror Beta: Adversary",
+    )
+    assert '"breaking_input"' in prompt
+    assert "MANDATORY for Juror Beta" in prompt
+    assert "breaking_input" in JUROR_BETA_SYSTEM_PROMPT
+    assert "MANDATORY COUNTEREXAMPLES" in JUROR_BETA_SYSTEM_PROMPT
+
+
+def test_stage2_crossexam_preserves_breaking_input():
+    finding = Finding(
+        file_path="src/auth.py",
+        line_start=10,
+        line_end=15,
+        severity="HIGH",
+        issue="Missing HMAC verification",
+        breaking_input="token = 'invalid.signature.payload'",
+    )
+    ballot = JurorBallot(
+        juror_id="beta",
+        model="qwen-3.8",
+        provider="constellation",
+        role_description="Adversary",
+        score=7.0,
+        verdict="REJECTED",
+        content_raw="",
+        findings=[finding],
+    )
+    prompt = build_stage2_crossexam_prompt(
+        task_intent="Audit crypto",
+        original_input="diff content",
+        peer_ballots=[ballot],
+        reviewer_role="Juror Alpha: Systems Architect",
+    )
+    assert "breaking_input" in prompt
+    assert "invalid.signature.payload" in prompt
+
+
+def test_stage3_arbitration_reconciles_and_backfills_breaking_input():
+    # Test reconciliation when arbiter drops breaking_input
+    orig_finding = Finding(
+        file_path="src/service.py",
+        line_start=20,
+        line_end=25,
+        severity="CRITICAL",
+        issue="SQL injection in search handler",
+        breaking_input="'; DROP TABLE users; --",
+        finding_id="F1",
+    )
+    cross_exam = CrossExamResult(
+        challenges=[
+            CrossExamChallenge(
+                finding_id="F1",
+                challenger_role="Juror Alpha",
+                challenger_model="mock-alpha",
+                status="CONFIRMED",
+                argument="Exploit verified",
+            )
+        ],
+        conceded_finding_ids=[],
+        surviving_findings=[orig_finding],
+    )
+
+    mesh = DeliberationMesh(mock_mode=True)
+
+    # Arbiter payload omits breaking_input
+    payload1 = {
+        "verdict": "REJECTED",
+        "consensus_score": 0.9,
+        "rationale": "Critical SQL injection confirmed.",
+        "surviving_findings": [
+            {
+                "file_path": "src/service.py",
+                "line_start": 20,
+                "line_end": 25,
+                "severity": "CRITICAL",
+                "category": "security",
+                "issue": "SQL injection in search handler",
+                # breaking_input omitted by LLM!
+            }
+        ],
+    }
+    from unittest.mock import AsyncMock, MagicMock
+    arbiter_adapter = AsyncMock()
+    arbiter_adapter.complete = AsyncMock(return_value=MagicMock(content=json.dumps(payload1)))
+
+    verdict = asyncio.run(
+        mesh._execute_stage3_arbitration(
+            task_intent="Review diff",
+            original_input="diff",
+            sanitized_ballots=[],
+            cross_exam=cross_exam,
+            arbiter_adapter=arbiter_adapter,
+        )
+    )
+
+    assert len(verdict.surviving_findings) == 1
+    # Successfully backfilled from Stage 1/2 surviving finding!
+    assert verdict.surviving_findings[0].breaking_input == "'; DROP TABLE users; --"
+
+    # Also verify that when Arbiter provides its own breaking_input, it is preserved
+    payload_with_breaking = {
+        "verdict": "REJECTED",
+        "consensus_score": 0.9,
+        "rationale": "Critical SQL injection confirmed.",
+        "surviving_findings": [
+            {
+                "file_path": "src/service.py",
+                "line_start": 20,
+                "line_end": 25,
+                "severity": "CRITICAL",
+                "category": "security",
+                "issue": "SQL injection in search handler",
+                "breaking_input": "'; TRUNCATE users; --",
+            }
+        ],
+    }
+    arbiter_adapter.complete = AsyncMock(return_value=MagicMock(content=json.dumps(payload_with_breaking)))
+    verdict2 = asyncio.run(
+        mesh._execute_stage3_arbitration(
+            task_intent="Review diff",
+            original_input="diff",
+            sanitized_ballots=[],
+            cross_exam=cross_exam,
+            arbiter_adapter=arbiter_adapter,
+        )
+    )
+    assert verdict2.surviving_findings[0].breaking_input == "'; TRUNCATE users; --"
+
+
+def test_sarif_v210_breaking_input_property_bag_and_markdown():
+    f1 = Finding(
+        file_path="src/calc.py",
+        line_start=5,
+        line_end=8,
+        severity="HIGH",
+        category="correctness",
+        issue="Division by zero in average calculator",
+        proof_or_refutation="len(items) can be 0",
+        breaking_input="calc.average([])",
+    )
+    f2 = Finding(
+        file_path="src/calc.py",
+        line_start=15,
+        line_end=15,
+        severity="LOW",
+        category="style",
+        issue="Variable name too short",
+        breaking_input=None,
+    )
+
+    sarif = generate_sarif_report([f1, f2])
+    results = sarif["runs"][0]["results"]
+    assert len(results) == 2
+
+    # f1 has breaking input
+    res0 = results[0]
+    assert "properties" in res0
+    assert res0["properties"]["breaking_input"] == "calc.average([])"
+    assert res0["properties"]["breakingInput"] == "calc.average([])"
+    assert "markdown" in res0["message"]
+    assert "calc.average([])" in res0["message"]["markdown"]
+
+    # Rule help contains breaking input
+    rule0 = sarif["runs"][0]["tool"]["driver"]["rules"][0]
+    assert "help" in rule0
+    assert "calc.average([])" in rule0["help"]["markdown"]
+
+    # f2 has None breaking input
+    res1 = results[1]
+    assert res1["properties"].get("breaking_input") is None
+    assert "markdown" not in res1["message"]
+
+
+def test_deliberation_mesh_markdown_and_cache_preserves_breaking_input(tmp_path: Path):
+    mesh = DeliberationMesh(mock_mode=True)
+    finding = Finding(
+        file_path="src/payment.py",
+        line_start=50,
+        line_end=55,
+        severity="CRITICAL",
+        category="security",
+        issue="Negative amount double credit vulnerability",
+        breaking_input='{"amount": -500.0, "currency": "USD"}',
+        proof_or_refutation="Balance updated without sign check",
+    )
+
+    # 1. Markdown formatting
+    md = mesh._format_review_markdown(
+        verdict="REJECTED",
+        consensus_score=0.95,
+        entropy=0.1,
+        rationale="Payment security exploit confirmed.",
+        findings=[finding],
+        juror_scores={"alpha": 9.0, "beta": 9.5},
+        patch_diff=None,
+    )
+    assert "Reproducible Breaking Input / Counterexample" in md
+    assert '{"amount": -500.0, "currency": "USD"}' in md
+
+    # 2. Cache restoration from SARIF properties
+    sarif = generate_sarif_report([finding])
+    from jury.state.engine import DeliberationRecord
+    record = DeliberationRecord(
+        verdict="REJECTED",
+        deliberation_markdown=md,
+        sarif_json=sarif,
+    )
+    cached_verdict = mesh._build_verdict_from_cache(record, duration_ms=10)
+    assert len(cached_verdict.findings) == 1
+    assert cached_verdict.findings[0].breaking_input == '{"amount": -500.0, "currency": "USD"}'
 
 
 def test_stylometric_sanitizer():

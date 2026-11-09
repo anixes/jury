@@ -168,17 +168,17 @@ def test_get_config_model_topology(monkeypatch, tmp_path):
 
     # Check panel model mappings
     assert "alpha" in cfg.models
-    assert cfg.models["alpha"].model_id == "constellation/glm-5-3-flash-free"
+    assert cfg.models["alpha"].model_id == "deepseek/deepseek-chat"
     assert cfg.models["alpha"].role == "architect"
-    assert cfg.models["alpha"].max_diff_tokens == 14000
+    assert cfg.models["alpha"].max_diff_tokens == 16000
 
     assert "beta" in cfg.models
-    assert cfg.models["beta"].model_id == "constellation/qwen3-8-flash-free"
+    assert cfg.models["beta"].model_id == "llama-3.3-70b-versatile"
     assert cfg.models["beta"].role == "adversary"
 
     assert "gamma" in cfg.models
-    assert cfg.models["gamma"].model_id == "llama-3.3-70b-versatile"
-    assert cfg.models["gamma"].max_diff_tokens == 5500  # Groq TPM clamp
+    assert cfg.models["gamma"].model_id == "qwen/qwen-2.5-coder-32b-instruct"
+    assert cfg.models["gamma"].max_diff_tokens == 16000
 
     assert "arbiter" in cfg.models
     assert cfg.models["arbiter"].role == "arbiter"

@@ -587,20 +587,20 @@ def test_adapter_registry_resolves_roles():
     registry = AdapterRegistry()
 
     alpha = registry.get_adapter("alpha")
-    assert isinstance(alpha, ConstellationAdapter)
-    assert "glm" in alpha.model.lower()
+    assert isinstance(alpha, DecoupledArbiterAdapter)
+    assert "deepseek" in alpha.model.lower()
 
     beta = registry.get_adapter("beta")
-    assert isinstance(beta, ConstellationAdapter)
-    assert "qwen" in beta.model.lower()
+    assert isinstance(beta, GroqAdapter)
+    assert "llama" in beta.model.lower()
 
     gamma = registry.get_adapter("gamma")
-    assert isinstance(gamma, GroqAdapter)
-    assert "llama" in gamma.model.lower()
+    assert isinstance(gamma, DecoupledArbiterAdapter)
+    assert "qwen" in gamma.model.lower()
 
     arbiter = registry.get_adapter("arbiter")
     assert isinstance(arbiter, DecoupledArbiterAdapter)
-    assert "deepseek" in arbiter.model.lower()
+    assert "llama" in arbiter.model.lower()
 
 
 def test_adapter_registry_caching():

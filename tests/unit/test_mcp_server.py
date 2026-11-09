@@ -307,6 +307,60 @@ class TestToolCalls:
         assert "result" in resp
         assert "verdict" in resp["result"]
 
+    def test_jury_review_returns_breaking_input(self, mcp_server: McpServer, monkeypatch: pytest.MonkeyPatch):
+        from unittest.mock import AsyncMock
+        from jury.deliberation.rubrics import Finding
+        from jury.deliberation.mesh import ReviewVerdict
+
+        mock_finding = Finding(
+            file_path="src/api.py",
+            line_start=15,
+            line_end=20,
+            severity="CRITICAL",
+            category="security",
+            issue="Command injection in handler",
+            breaking_input="curl -H 'X-Exploit: 1' http://localhost/test",
+            proof_or_refutation="Input passed to subprocess directly",
+            finding_id="F101",
+        )
+        mock_verdict = ReviewVerdict(
+            verdict="REJECTED",
+            score=4.5,
+            consensus_score=0.92,
+            entropy_bpde=0.08,
+            findings=[mock_finding],
+            deliberation_markdown=(
+                "### Surviving Defects & Risks\n"
+                "- **[CRITICAL]** `src/api.py:15`: Command injection in handler\n"
+                "  - **Reproducible Breaking Input / Counterexample**:\n"
+                "    ```\n    curl -H 'X-Exploit: 1' http://localhost/test\n    ```\n"
+            ),
+        )
+
+        monkeypatch.setattr(mcp_server.mesh, "review", AsyncMock(return_value=mock_verdict))
+
+        req = {
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "tools/call",
+            "params": {
+                "name": "jury_review",
+                "arguments": {"diff": "diff --git a/test.py b/test.py\n+import os"},
+            },
+        }
+        resp = asyncio.run(mcp_server.handle_request(req))
+        assert resp is not None
+        assert "result" in resp
+        result = resp["result"]
+        assert len(result["findings"]) == 1
+        f0 = result["findings"][0]
+        assert f0["breaking_input"] == "curl -H 'X-Exploit: 1' http://localhost/test"
+        assert f0["finding_id"] == "F101"
+        assert f0["id"] == "F101"
+        assert f0["issue"] == "Command injection in handler"
+        assert f0["title"] == "Command injection in handler"
+        assert "curl -H 'X-Exploit: 1'" in result["content"][0]["text"]
+
     def test_jury_ask_with_question(self, mcp_server: McpServer):
         req = {
             "jsonrpc": "2.0",
